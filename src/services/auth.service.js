@@ -154,7 +154,7 @@ export async function refreshAccessToken(pool, refreshToken) {
   return {
     ok: true,
     accessToken,
-    user: { id: sesion.usuario_id, rol: sesion.rol },
+    user: { id: sesion.usuario_id, rol: sesion.rol, email: sesion.email },
   };
 }
 

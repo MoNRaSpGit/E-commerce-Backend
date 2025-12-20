@@ -1,18 +1,34 @@
 import express from "express";
 import cors from "cors";
 import "dotenv/config";
+
 import { createPool } from "./src/config/db.js";
 import productosRoutes from "./src/routes/productos.routes.js";
+import authRoutes from "./src/routes/auth.routes.js";
+import { requireAuth, requireRole } from "./src/middlewares/auth.js";
 
 const app = express();
 
-app.use(cors());
+/// Middlewares base
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://monraspgit.github.io",
+];
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // Postman / curl
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error("Not allowed by CORS"));
+  },
+}));
+
 app.use(express.json());
 
 // DB pool disponible globalmente
 app.locals.pool = createPool();
 
-// Health
+// Health check
 app.get("/health", async (req, res) => {
   try {
     const [rows] = await app.locals.pool.query("SELECT 1 AS ok");
@@ -22,10 +38,30 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// Rutas
+// Rutas públicas
 app.use("/api/productos", productosRoutes);
+app.use("/api/auth", authRoutes);
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log(`Servidor escuchando en puerto ${PORT}`)
+// Rutas protegidas (solo para pruebas de roles)
+app.get("/api/privado", requireAuth, (req, res) => {
+  res.json({ ok: true, user: req.user });
+});
+
+app.get("/api/admin", requireAuth, requireRole("admin"), (req, res) => {
+  res.json({ ok: true, mensaje: "Solo admin", user: req.user });
+});
+
+app.get(
+  "/api/operario",
+  requireAuth,
+  requireRole("admin", "operario"),
+  (req, res) => {
+    res.json({ ok: true, mensaje: "Admin u operario", user: req.user });
+  }
 );
+
+// Server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor escuchando en puerto ${PORT}`);
+});

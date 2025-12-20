@@ -6,4 +6,3 @@ const router = Router();
 router.get("/", obtenerProductos);
 
 export default router;
-/*dfdsfdsfds*/

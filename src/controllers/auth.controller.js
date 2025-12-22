@@ -1,4 +1,4 @@
-import { loginConPassword, logoutConRefresh, refreshAccessToken } from "../services/auth.service.js";
+import { loginConPassword, logoutConRefresh, refreshAccessToken, registerConPassword } from "../services/auth.service.js";
 
 
 /**
@@ -121,6 +121,33 @@ export async function refresh(req, res) {
     });
   } catch (err) {
     console.error("Refresh error:", err);
+    return res.status(500).json({ ok: false, error: "Error interno del servidor" });
+  }
+}
+
+/**
+ * POST /api/auth/register
+ * Body: { email, password }
+ */
+export async function register(req, res) {
+  try {
+    const { email, password } = req.body || {};
+
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, error: "Email y password son obligatorios" });
+    }
+
+    const pool = req.app.locals.pool;
+
+    const result = await registerConPassword(pool, { email, password });
+
+    if (!result.ok) {
+      return res.status(400).json(result);
+    }
+
+    return res.status(201).json(result);
+  } catch (err) {
+    console.error("Register error:", err);
     return res.status(500).json({ ok: false, error: "Error interno del servidor" });
   }
 }

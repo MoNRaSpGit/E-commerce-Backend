@@ -7,6 +7,9 @@ const router = Router();
 router.post("/login", login);
 router.post("/logout", logout);
 router.post("/refresh", refresh);
+router.post("/register", register);
+
+
 
 // protegido
 router.get("/me", requireAuth, me);

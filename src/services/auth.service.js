@@ -194,3 +194,27 @@ export async function registerConPassword(pool, { email, password }) {
 }
 
 
+export async function registerYLogin(pool, { email, password, meta }) {
+  const cleanEmail = String(email).trim().toLowerCase();
+  if (!cleanEmail.includes("@")) return { ok: false, error: "Email inválido" };
+  if (String(password).length < 4) return { ok: false, error: "Password muy corta" };
+
+  const [exists] = await pool.query(
+    `SELECT id FROM eco_usuario WHERE email = ? LIMIT 1`,
+    [cleanEmail]
+  );
+  if (exists.length > 0) return { ok: false, error: "Ese email ya está registrado" };
+
+  const password_hash = await bcrypt.hash(password, 10);
+
+  await pool.query(
+    `INSERT INTO eco_usuario (email, password_hash, rol, activo)
+     VALUES (?, ?, 'cliente', 1)`,
+    [cleanEmail, password_hash]
+  );
+
+  // ✅ Reutilizamos tu login existente (crea tokens + sesión)
+  return await loginConPassword(pool, { email: cleanEmail, password, meta });
+}
+
+

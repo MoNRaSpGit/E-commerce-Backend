@@ -1,4 +1,5 @@
-import { loginConPassword, logoutConRefresh, refreshAccessToken, registerConPassword } from "../services/auth.service.js";
+import { loginConPassword, logoutConRefresh, refreshAccessToken, registerConPassword , registerYLogin} from "../services/auth.service.js";
+
 
 
 /**
@@ -132,20 +133,32 @@ export async function refresh(req, res) {
 export async function register(req, res) {
   try {
     const { email, password } = req.body || {};
-
     if (!email || !password) {
       return res.status(400).json({ ok: false, error: "Email y password son obligatorios" });
     }
 
     const pool = req.app.locals.pool;
 
-    const result = await registerConPassword(pool, { email, password });
+    const result = await registerYLogin(pool, {
+      email,
+      password,
+      meta: {
+        userAgent: req.headers["user-agent"] || null,
+        ip:
+          req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+          req.ip ||
+          null,
+      },
+    });
 
-    if (!result.ok) {
-      return res.status(400).json(result);
-    }
+    if (!result.ok) return res.status(400).json(result);
 
-    return res.status(201).json(result);
+    return res.status(201).json({
+      ok: true,
+      user: result.user,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    });
   } catch (err) {
     console.error("Register error:", err);
     return res.status(500).json({ ok: false, error: "Error interno del servidor" });

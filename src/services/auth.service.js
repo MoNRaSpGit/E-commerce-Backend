@@ -31,16 +31,16 @@ export async function loginConPassword(pool, { email, password, meta }) {
   if (!valid) return { ok: false, error: "Credenciales inválidas" };
 
   // Access token (corto)
-// Access token (corto)
-const accessToken = jwt.sign(
-  {
-    sub: String(user.id),
-    rol: user.rol,
-    email: user.email,
-  },
-  process.env.JWT_ACCESS_SECRET,
-  { expiresIn: process.env.ACCESS_TOKEN_TTL || "15m" }
-);
+  // Access token (corto)
+  const accessToken = jwt.sign(
+    {
+      sub: String(user.id),
+      rol: user.rol,
+      email: user.email,
+    },
+    process.env.JWT_ACCESS_SECRET,
+    { expiresIn: process.env.ACCESS_TOKEN_TTL || "15m" }
+  );
 
 
   // Refresh token (largo)
@@ -118,14 +118,14 @@ export async function refreshAccessToken(pool, refreshToken) {
   const refreshHash = sha256(refreshToken);
 
   // 2) validar sesión en DB: existe, no revocada, no expirada
- const [rows] = await pool.query(
-  `SELECT s.id, s.usuario_id, s.expira_at, s.revocado_at, u.rol, u.email, u.activo
+  const [rows] = await pool.query(
+    `SELECT s.id, s.usuario_id, s.expira_at, s.revocado_at, u.rol, u.email, u.activo
    FROM eco_sesion s
    JOIN eco_usuario u ON u.id = s.usuario_id
    WHERE s.refresh_token_hash = ?
    LIMIT 1`,
-  [refreshHash]
-);
+    [refreshHash]
+  );
 
 
   const sesion = rows[0];
@@ -140,15 +140,15 @@ export async function refreshAccessToken(pool, refreshToken) {
   }
 
   // 3) emitir nuevo access token
- const accessToken = jwt.sign(
-  {
-    sub: String(sesion.usuario_id),
-    rol: sesion.rol,
-    email: sesion.email,
-  },
-  process.env.JWT_ACCESS_SECRET,
-  { expiresIn: process.env.ACCESS_TOKEN_TTL || "15m" }
-);
+  const accessToken = jwt.sign(
+    {
+      sub: String(sesion.usuario_id),
+      rol: sesion.rol,
+      email: sesion.email,
+    },
+    process.env.JWT_ACCESS_SECRET,
+    { expiresIn: process.env.ACCESS_TOKEN_TTL || "15m" }
+  );
 
 
   return {
@@ -196,16 +196,34 @@ export async function registerConPassword(pool, { email, password }) {
 
 export async function registerYLogin(pool, { email, password, meta }) {
   const cleanEmail = String(email).trim().toLowerCase();
-  if (!cleanEmail.includes("@")) return { ok: false, error: "Email inválido" };
-  if (String(password).length < 4) return { ok: false, error: "Password muy corta" };
+  if (!cleanEmail.includes("@")) {
+    return { ok: false, error: "Email inválido" };
+  }
 
+  const pass = String(password);
+
+  // ✅ Política mínima
+  const okLen = pass.length >= 8;
+  const hasLetter = /[A-Za-z]/.test(pass);
+  const hasNumber = /\d/.test(pass);
+
+  if (!okLen || !hasLetter || !hasNumber) {
+    return {
+      ok: false,
+      error: "Password: mínimo 8 caracteres e incluir letras y números",
+    };
+  }
+
+  // evitar duplicados
   const [exists] = await pool.query(
     `SELECT id FROM eco_usuario WHERE email = ? LIMIT 1`,
     [cleanEmail]
   );
-  if (exists.length > 0) return { ok: false, error: "Ese email ya está registrado" };
+  if (exists.length > 0) {
+    return { ok: false, error: "Ese email ya está registrado" };
+  }
 
-  const password_hash = await bcrypt.hash(password, 10);
+  const password_hash = await bcrypt.hash(pass, 10);
 
   await pool.query(
     `INSERT INTO eco_usuario (email, password_hash, rol, activo)
@@ -214,7 +232,8 @@ export async function registerYLogin(pool, { email, password, meta }) {
   );
 
   // ✅ Reutilizamos tu login existente (crea tokens + sesión)
-  return await loginConPassword(pool, { email: cleanEmail, password, meta });
+  return await loginConPassword(pool, { email: cleanEmail, password: pass, meta });
 }
+
 
 

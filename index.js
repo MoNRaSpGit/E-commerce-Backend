@@ -6,6 +6,8 @@ import { createPool } from "./src/config/db.js";
 import productosRoutes from "./src/routes/productos.routes.js";
 import authRoutes from "./src/routes/auth.routes.js";
 import { requireAuth, requireRole } from "./src/middlewares/auth.js";
+import pedidosRoutes from "./src/routes/pedidos.routes.js";
+
 
 const app = express();
 
@@ -41,6 +43,8 @@ app.get("/health", async (req, res) => {
 // Rutas públicas
 app.use("/api/productos", productosRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/pedidos", pedidosRoutes);
+
 
 // Rutas protegidas (solo para pruebas de roles)
 app.get("/api/privado", requireAuth, (req, res) => {

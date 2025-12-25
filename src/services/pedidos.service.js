@@ -130,25 +130,27 @@ export async function obtenerPedidosDeUsuario(pool, usuarioId) {
 }
 
 export async function obtenerPedidos(pool, { estado }) {
-  if (estado && !ESTADOS.has(estado)) {
-    return [];
-  }
+  if (estado && !ESTADOS.has(estado)) return [];
 
   const params = [];
   let where = "";
   if (estado) {
-    where = "WHERE estado = ?";
+    where = "WHERE p.estado = ?";
     params.push(estado);
   }
 
   const [rows] = await pool.query(
-    `SELECT id, usuario_id, estado, total, moneda, created_at, updated_at
-     FROM eco_pedido
+    `SELECT
+        p.id, p.usuario_id, u.email AS usuario_email,
+        p.estado, p.total, p.moneda, p.created_at, p.updated_at
+     FROM eco_pedido p
+     JOIN eco_usuario u ON u.id = p.usuario_id
      ${where}
-     ORDER BY created_at DESC
+     ORDER BY p.created_at DESC
      LIMIT 200`,
     params
   );
+
   return rows;
 }
 
@@ -166,3 +168,35 @@ export async function actualizarEstadoPedido(pool, { pedidoId, estado }) {
 
   return { ok: true, pedidoId: id, estado };
 }
+
+export async function obtenerDetallePedido(pool, pedidoId) {
+  const id = Number(pedidoId);
+  if (!id) return null;
+
+  const [pedRows] = await pool.query(
+    `SELECT
+        p.id, p.usuario_id, u.email AS usuario_email,
+        p.estado, p.total, p.moneda, p.created_at, p.updated_at
+     FROM eco_pedido p
+     JOIN eco_usuario u ON u.id = p.usuario_id
+     WHERE p.id = ?
+     LIMIT 1`,
+    [id]
+  );
+
+  const pedido = pedRows?.[0];
+  if (!pedido) return null;
+
+  const [items] = await pool.query(
+    `SELECT
+        id, pedido_id, producto_id,
+        nombre_snapshot, precio_unitario_snapshot, cantidad, subtotal
+     FROM eco_pedido_item
+     WHERE pedido_id = ?
+     ORDER BY id ASC`,
+    [id]
+  );
+
+  return { ...pedido, items };
+}
+

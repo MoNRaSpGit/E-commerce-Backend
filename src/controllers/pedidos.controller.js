@@ -3,7 +3,10 @@ import {
   obtenerPedidosDeUsuario,
   obtenerPedidos,
   actualizarEstadoPedido,
+  obtenerDetallePedido ,
 } from "../services/pedidos.service.js";
+import { emitPedidoEvent } from "../realtime/pedidosHub.js";
+
 
 export async function crearPedido(req, res) {
   try {
@@ -25,6 +28,16 @@ export async function crearPedido(req, res) {
     });
 
     if (!result.ok) return res.status(400).json(result);
+
+    emitPedidoEvent("pedido_creado", {
+      pedidoId: result.pedido.id,
+      estado: result.pedido.estado,
+      total: result.pedido.total,
+      moneda: result.pedido.moneda,
+      usuarioId: req.user.id,
+      at: new Date().toISOString(),
+    });
+
 
     return res.status(201).json(result);
   } catch (err) {
@@ -70,9 +83,31 @@ export async function cambiarEstadoPedido(req, res) {
 
     if (!result.ok) return res.status(400).json(result);
 
+    emitPedidoEvent("pedido_estado", {
+      pedidoId: id,
+      estado,
+      at: new Date().toISOString(),
+    });
+
     return res.json(result);
   } catch (err) {
     console.error("cambiarEstadoPedido error:", err);
+    return res.status(500).json({ ok: false, error: "Error interno del servidor" });
+  }
+}
+
+
+export async function detallePedido(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+    const id = Number(req.params.id);
+
+    const data = await obtenerDetallePedido(pool, id);
+    if (!data) return res.status(404).json({ ok: false, error: "Pedido no encontrado" });
+
+    return res.json({ ok: true, data });
+  } catch (err) {
+    console.error("detallePedido error:", err);
     return res.status(500).json({ ok: false, error: "Error interno del servidor" });
   }
 }

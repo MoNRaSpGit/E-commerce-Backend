@@ -14,7 +14,7 @@ function sha256(text) {
  */
 export async function loginConPassword(pool, { email, password, meta }) {
   const [rows] = await pool.query(
-    `SELECT id, email, password_hash, rol, activo
+    `SELECT id, email, password_hash, rol, activo, nombre, apellido
      FROM eco_usuario
      WHERE email = ?
      LIMIT 1`,
@@ -80,7 +80,9 @@ export async function loginConPassword(pool, { email, password, meta }) {
     user: {
       id: user.id,
       email: user.email,
-      rol: user.rol
+      rol: user.rol,
+      nombre: user.nombre || null,
+      apellido: user.apellido || null,
     }
   };
 }
@@ -119,7 +121,8 @@ export async function refreshAccessToken(pool, refreshToken) {
 
   // 2) validar sesión en DB: existe, no revocada, no expirada
   const [rows] = await pool.query(
-    `SELECT s.id, s.usuario_id, s.expira_at, s.revocado_at, u.rol, u.email, u.activo
+    `SELECT s.id, s.usuario_id, s.expira_at, s.revocado_at,
+       u.rol, u.email, u.activo, u.nombre, u.apellido
    FROM eco_sesion s
    JOIN eco_usuario u ON u.id = s.usuario_id
    WHERE s.refresh_token_hash = ?
@@ -154,7 +157,13 @@ export async function refreshAccessToken(pool, refreshToken) {
   return {
     ok: true,
     accessToken,
-    user: { id: sesion.usuario_id, rol: sesion.rol, email: sesion.email },
+    user: {
+      id: sesion.usuario_id,
+      rol: sesion.rol,
+      email: sesion.email,
+      nombre: sesion.nombre || null,
+      apellido: sesion.apellido || null,
+    },
   };
 }
 
@@ -194,7 +203,7 @@ export async function registerConPassword(pool, { email, password }) {
 }
 
 
-export async function registerYLogin(pool, { email, password, meta }) {
+export async function registerYLogin(pool, { email, password, nombre, apellido, telefono, meta }) {
   const cleanEmail = String(email).trim().toLowerCase();
   if (!cleanEmail.includes("@")) {
     return { ok: false, error: "Email inválido" };
@@ -214,6 +223,15 @@ export async function registerYLogin(pool, { email, password, meta }) {
     };
   }
 
+  // ✅ Validar nombre (mínimo)
+  const cleanNombre = nombre ? String(nombre).trim() : "";
+  const cleanApellido = apellido ? String(apellido).trim() : "";
+  const cleanTelefono = telefono ? String(telefono).trim() : "";
+
+  if (cleanNombre.length < 2) {
+    return { ok: false, error: "Nombre requerido (mínimo 2 caracteres)" };
+  }
+
   // evitar duplicados
   const [exists] = await pool.query(
     `SELECT id FROM eco_usuario WHERE email = ? LIMIT 1`,
@@ -226,9 +244,9 @@ export async function registerYLogin(pool, { email, password, meta }) {
   const password_hash = await bcrypt.hash(pass, 10);
 
   await pool.query(
-    `INSERT INTO eco_usuario (email, password_hash, rol, activo)
-     VALUES (?, ?, 'cliente', 1)`,
-    [cleanEmail, password_hash]
+    `INSERT INTO eco_usuario (email, password_hash, rol, activo, nombre, apellido, telefono)
+     VALUES (?, ?, 'cliente', 1, ?, ?, ?)`,
+    [cleanEmail, password_hash, cleanNombre || null, cleanApellido || null, cleanTelefono || null]
   );
 
   // ✅ Reutilizamos tu login existente (crea tokens + sesión)

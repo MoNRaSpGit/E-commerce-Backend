@@ -1,4 +1,4 @@
-import { loginConPassword, logoutConRefresh, refreshAccessToken, registerConPassword , registerYLogin} from "../services/auth.service.js";
+import { loginConPassword, logoutConRefresh, refreshAccessToken, registerConPassword, registerYLogin } from "../services/auth.service.js";
 
 
 
@@ -8,7 +8,7 @@ import { loginConPassword, logoutConRefresh, refreshAccessToken, registerConPass
  */
 export async function login(req, res) {
   try {
-    const { email, password } = req.body || {};
+    const { email, password, nombre, apellido, telefono } = req.body || {};
 
     if (!email || !password) {
       return res.status(400).json({
@@ -88,9 +88,28 @@ export async function logout(req, res) {
  */
 export async function me(req, res) {
   try {
+    const pool = req.app.locals.pool;
+
+    const [rows] = await pool.query(
+      `SELECT id, email, rol, nombre, apellido
+       FROM eco_usuario
+       WHERE id = ?
+       LIMIT 1`,
+      [req.user.id]
+    );
+
+    const u = rows?.[0];
+    if (!u) return res.status(404).json({ ok: false, error: "Usuario no encontrado" });
+
     return res.json({
       ok: true,
-      user: req.user, // { id, rol } (y lo que agreguemos al token)
+      user: {
+        id: u.id,
+        email: u.email,
+        rol: u.rol,
+        nombre: u.nombre || null,
+        apellido: u.apellido || null,
+      },
     });
   } catch (err) {
     console.error("Me error:", err);
@@ -132,7 +151,7 @@ export async function refresh(req, res) {
  */
 export async function register(req, res) {
   try {
-    const { email, password } = req.body || {};
+    const { email, password, nombre, apellido, telefono } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ ok: false, error: "Email y password son obligatorios" });
     }
@@ -142,6 +161,9 @@ export async function register(req, res) {
     const result = await registerYLogin(pool, {
       email,
       password,
+      nombre,
+      apellido,
+      telefono,
       meta: {
         userAgent: req.headers["user-agent"] || null,
         ip:
@@ -164,4 +186,5 @@ export async function register(req, res) {
     return res.status(500).json({ ok: false, error: "Error interno del servidor" });
   }
 }
+
 

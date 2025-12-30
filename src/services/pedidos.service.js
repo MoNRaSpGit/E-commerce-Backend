@@ -159,8 +159,41 @@ export async function actualizarEstadoPedido(pool, { pedidoId, estado }) {
   if (!id) return { ok: false, error: "Pedido inválido" };
   if (!ESTADOS.has(estado)) return { ok: false, error: "Estado inválido" };
 
+  // 1) Leer estado actual
+  const [rows] = await pool.query(
+    `SELECT estado FROM eco_pedido WHERE id = ? LIMIT 1`,
+    [id]
+  );
+
+  const actual = rows?.[0]?.estado;
+  if (!actual) return { ok: false, error: "Pedido no encontrado" };
+
+  // 2) Si no cambia, OK (idempotente)
+  if (actual === estado) {
+    return { ok: true, pedidoId: id, estado };
+  }
+
+  // 3) Validar transición
+  const ALLOWED = {
+    pendiente: new Set(["en_proceso", "cancelado"]),
+    en_proceso: new Set(["listo", "cancelado"]),
+    listo: new Set([]),
+    cancelado: new Set([]),
+  };
+
+  const allowedNext = ALLOWED[actual] || new Set();
+  if (!allowedNext.has(estado)) {
+    return {
+      ok: false,
+      error: `Transición inválida: ${actual} → ${estado}`,
+    };
+  }
+
+  // 4) Actualizar
   const [r] = await pool.query(
-    `UPDATE eco_pedido SET estado = ?, updated_at = NOW() WHERE id = ?`,
+    `UPDATE eco_pedido
+     SET estado = ?, updated_at = NOW()
+     WHERE id = ?`,
     [estado, id]
   );
 
@@ -168,6 +201,7 @@ export async function actualizarEstadoPedido(pool, { pedidoId, estado }) {
 
   return { ok: true, pedidoId: id, estado };
 }
+
 
 export async function obtenerDetallePedido(pool, pedidoId) {
   const id = Number(pedidoId);

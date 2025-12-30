@@ -4,6 +4,7 @@ import {
   obtenerPedidos,
   actualizarEstadoPedido,
   obtenerDetallePedido ,
+  archivarPedidoService,
 } from "../services/pedidos.service.js";
 import { emitPedidoEvent } from "../realtime/pedidosHub.js";
 
@@ -111,3 +112,22 @@ export async function detallePedido(req, res) {
     return res.status(500).json({ ok: false, error: "Error interno del servidor" });
   }
 }
+
+export async function archivarPedido(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+    const id = Number(req.params.id);
+
+    if (!id) return res.status(400).json({ ok: false, error: "Pedido inválido" });
+
+    const result = await archivarPedidoService(pool, { pedidoId: id });
+
+    if (!result.ok) return res.status(400).json(result);
+
+    return res.json(result);
+  } catch (err) {
+    console.error("archivarPedido error:", err);
+    return res.status(500).json({ ok: false, error: "Error interno del servidor" });
+  }
+}
+

@@ -133,11 +133,12 @@ export async function obtenerPedidos(pool, { estado }) {
   if (estado && !ESTADOS.has(estado)) return [];
 
   const params = [];
-  let where = "";
+  let where = "WHERE p.archivado = 0";
   if (estado) {
-    where = "WHERE p.estado = ?";
+    where += " AND p.estado = ?";
     params.push(estado);
   }
+
 
   const [rows] = await pool.query(
     `SELECT
@@ -240,4 +241,32 @@ export async function obtenerDetallePedido(pool, pedidoId) {
 
   return { ...pedido, items };
 }
+
+
+export async function archivarPedidoService(pool, { pedidoId }) {
+  const id = Number(pedidoId);
+  if (!id) return { ok: false, error: "Pedido inválido" };
+
+  // Solo se puede archivar si está listo o cancelado
+  const [rows] = await pool.query(
+    `SELECT estado, archivado FROM eco_pedido WHERE id = ? LIMIT 1`,
+    [id]
+  );
+
+  const p = rows?.[0];
+  if (!p) return { ok: false, error: "Pedido no encontrado" };
+  if (Number(p.archivado) === 1) return { ok: true, pedidoId: id, archivado: true };
+
+  if (p.estado !== "listo" && p.estado !== "cancelado") {
+    return { ok: false, error: "Solo se puede archivar si está listo o cancelado" };
+  }
+
+  await pool.query(
+    `UPDATE eco_pedido SET archivado = 1, updated_at = NOW() WHERE id = ?`,
+    [id]
+  );
+
+  return { ok: true, pedidoId: id, archivado: true };
+}
+
 

@@ -5,6 +5,7 @@ import {
   listarPedidos,
   cambiarEstadoPedido,
   detallePedido,
+  archivarPedido,
 } from "../controllers/pedidos.controller.js";
 
 import { streamPedidos } from "../controllers/pedidos.stream.controller.js";
@@ -30,5 +31,7 @@ router.get(
 router.get("/", requireAuth, requireRole("operario", "admin"), listarPedidos);
 router.patch("/:id/estado", requireAuth, requireRole("operario", "admin"), cambiarEstadoPedido);
 router.get("/:id", requireAuth, requireRole("operario", "admin"), detallePedido);
+router.patch("/:id/archivar", requireAuth, requireRole("operario", "admin"), archivarPedido);
+
 
 export default router;

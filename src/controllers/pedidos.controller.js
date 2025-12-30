@@ -6,7 +6,8 @@ import {
   obtenerDetallePedido,
   archivarPedidoService,
 } from "../services/pedidos.service.js";
-import { emitPedidoCreado, emitPedidoEstado } from "../realtime/pedidosHub.js";
+//import { emitPedidoCreado, emitPedidoEstado } from "../realtime/pedidosHub.js";
+import { emitStaff, emitToUser } from "../realtime/pedidosHub.js";
 
 
 export async function crearPedido(req, res) {
@@ -30,13 +31,25 @@ export async function crearPedido(req, res) {
 
     if (!result.ok) return res.status(400).json(result);
 
-    emitPedidoCreado({
+    // a) avisar a staff (operario/admin)
+    emitStaff("pedido_creado", {
       usuarioId: req.user.id,
       pedidoId: result.pedido.id,
       estado: result.pedido.estado,
       total: result.pedido.total,
       moneda: result.pedido.moneda,
+      at: new Date().toISOString(),
     });
+
+    // b) avisar al cliente (para MisPedidos SSE)
+    emitToUser(req.user.id, "pedido_creado", {
+      pedidoId: result.pedido.id,
+      estado: result.pedido.estado,
+      total: result.pedido.total,
+      moneda: result.pedido.moneda,
+      at: new Date().toISOString(),
+    });
+
 
 
     return res.status(201).json(result);
@@ -91,12 +104,19 @@ export async function cambiarEstadoPedido(req, res) {
     );
     const usuarioId = ownRows?.[0]?.usuario_id;
 
-    // ✅ SSE para el cliente
+    // 1) avisar a staff (siempre)
+    emitStaff("pedido_estado", {
+      pedidoId: id,
+      estado,
+      at: new Date().toISOString(),
+    });
+
+    // 2) avisar al dueño del pedido (cliente)
     if (usuarioId) {
-      emitPedidoEstado({
-        usuarioId,
+      emitToUser(usuarioId, "pedido_estado", {
         pedidoId: id,
         estado,
+        at: new Date().toISOString(),
       });
     }
 

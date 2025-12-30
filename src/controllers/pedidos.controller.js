@@ -3,10 +3,10 @@ import {
   obtenerPedidosDeUsuario,
   obtenerPedidos,
   actualizarEstadoPedido,
-  obtenerDetallePedido ,
+  obtenerDetallePedido,
   archivarPedidoService,
 } from "../services/pedidos.service.js";
-import { emitPedidoEvent } from "../realtime/pedidosHub.js";
+import { emitPedidoCreado, emitPedidoEstado } from "../realtime/pedidosHub.js";
 
 
 export async function crearPedido(req, res) {
@@ -30,13 +30,12 @@ export async function crearPedido(req, res) {
 
     if (!result.ok) return res.status(400).json(result);
 
-    emitPedidoEvent("pedido_creado", {
+    emitPedidoCreado({
+      usuarioId: req.user.id,
       pedidoId: result.pedido.id,
       estado: result.pedido.estado,
       total: result.pedido.total,
       moneda: result.pedido.moneda,
-      usuarioId: req.user.id,
-      at: new Date().toISOString(),
     });
 
 
@@ -82,20 +81,35 @@ export async function cambiarEstadoPedido(req, res) {
 
     const result = await actualizarEstadoPedido(pool, { pedidoId: id, estado });
 
+    // ⛔ si falló, NO emitimos SSE
     if (!result.ok) return res.status(400).json(result);
 
-    emitPedidoEvent("pedido_estado", {
-      pedidoId: id,
-      estado,
-      at: new Date().toISOString(),
-    });
+    // buscar el usuario dueño del pedido
+    const [ownRows] = await pool.query(
+      `SELECT usuario_id FROM eco_pedido WHERE id = ? LIMIT 1`,
+      [id]
+    );
+    const usuarioId = ownRows?.[0]?.usuario_id;
+
+    // ✅ SSE para el cliente
+    if (usuarioId) {
+      emitPedidoEstado({
+        usuarioId,
+        pedidoId: id,
+        estado,
+      });
+    }
 
     return res.json(result);
   } catch (err) {
     console.error("cambiarEstadoPedido error:", err);
-    return res.status(500).json({ ok: false, error: "Error interno del servidor" });
+    return res.status(500).json({
+      ok: false,
+      error: "Error interno del servidor",
+    });
   }
 }
+
 
 
 export async function detallePedido(req, res) {

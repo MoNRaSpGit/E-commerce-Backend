@@ -1,6 +1,6 @@
 // src/controllers/pedidos.stream.controller.js
 import {
-  addOperarioClient,
+  addStaffClient,
   removeOperarioClient,
   addUserClient,
   removeUserClient,
@@ -15,7 +15,7 @@ export function streamPedidos(req, res) {
   // ping inicial
   res.write(`event: ping\ndata: "ok"\n\n`);
 
-  addOperarioClient(res);
+  addStaffClient(res);
 
   const keepAlive = setInterval(() => {
     try {
@@ -25,7 +25,7 @@ export function streamPedidos(req, res) {
 
   req.on("close", () => {
     clearInterval(keepAlive);
-    removeOperarioClient(res);
+    removeStaffClient(res);
   });
 }
 

@@ -141,8 +141,15 @@ export async function obtenerPedidos(pool, { estado }) {
 
   const [rows] = await pool.query(
     `SELECT
-        p.id, p.usuario_id, u.email AS usuario_email,
-        p.estado, p.total, p.moneda, p.created_at, p.updated_at
+  p.id,
+  p.usuario_id,
+  u.email AS usuario_email,
+  u.nombre,
+  p.estado,
+  p.total,
+  p.moneda,
+  p.created_at,
+  p.updated_at
      FROM eco_pedido p
      JOIN eco_usuario u ON u.id = p.usuario_id
      ${where}

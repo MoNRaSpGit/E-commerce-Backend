@@ -1,7 +1,7 @@
 // src/controllers/pedidos.stream.controller.js
 import {
   addStaffClient,
-  removeOperarioClient,
+  removeStaffClient,
   addUserClient,
   removeUserClient,
 } from "../realtime/pedidosHub.js";
@@ -37,6 +37,9 @@ export function streamMisPedidos(req, res) {
 
   // req.user viene del requireAuthSse
   const userId = req.user?.id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: "No autenticado (SSE)" });
+  }
 
   res.write(`event: ping\ndata: "ok"\n\n`);
 

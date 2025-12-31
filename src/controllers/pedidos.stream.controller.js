@@ -11,6 +11,8 @@ export function streamPedidos(req, res) {
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // ✅ evita buffering en proxies
+  res.flushHeaders?.(); // ✅ si está disponible, manda headers ya
 
   // ping inicial
   res.write(`event: ping\ndata: "ok"\n\n`);
@@ -20,12 +22,21 @@ export function streamPedidos(req, res) {
   const keepAlive = setInterval(() => {
     try {
       res.write(`event: ping\ndata: "keep"\n\n`);
-    } catch {}
+    } catch {
+      clearInterval(keepAlive);
+      removeStaffClient(res);
+      try {
+        res.end();
+      } catch {}
+    }
   }, 25000);
 
   req.on("close", () => {
     clearInterval(keepAlive);
     removeStaffClient(res);
+    try {
+      res.end();
+    } catch {}
   });
 }
 
@@ -34,6 +45,8 @@ export function streamMisPedidos(req, res) {
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // ✅ evita buffering en proxies
+  res.flushHeaders?.(); // ✅ si está disponible, manda headers ya
 
   // req.user viene del requireAuthSse
   const userId = req.user?.id;
@@ -48,11 +61,20 @@ export function streamMisPedidos(req, res) {
   const keepAlive = setInterval(() => {
     try {
       res.write(`event: ping\ndata: "keep"\n\n`);
-    } catch {}
+    } catch {
+      clearInterval(keepAlive);
+      removeUserClient(userId, res);
+      try {
+        res.end();
+      } catch {}
+    }
   }, 25000);
 
   req.on("close", () => {
     clearInterval(keepAlive);
     removeUserClient(userId, res);
+    try {
+      res.end();
+    } catch {}
   });
 }

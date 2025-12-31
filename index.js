@@ -8,8 +8,8 @@ import authRoutes from "./src/routes/auth.routes.js";
 import { requireAuth, requireRole } from "./src/middlewares/auth.js";
 import pedidosRoutes from "./src/routes/pedidos.routes.js";
 
-
 const app = express();
+app.set("trust proxy", 1); // ✅ Render / reverse proxy
 
 /// Middlewares base
 const allowedOrigins = [
@@ -17,13 +17,15 @@ const allowedOrigins = [
   "https://monraspgit.github.io",
 ];
 
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // Postman / curl
-    if (allowedOrigins.includes(origin)) return cb(null, true);
-    return cb(new Error("Not allowed by CORS"));
-  },
-}));
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // Postman / curl
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS"));
+    },
+  })
+);
 
 app.use(express.json());
 
@@ -45,7 +47,6 @@ app.use("/api/productos", productosRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/pedidos", pedidosRoutes);
 
-
 // Rutas protegidas (solo para pruebas de roles)
 app.get("/api/privado", requireAuth, (req, res) => {
   res.json({ ok: true, user: req.user });
@@ -55,14 +56,9 @@ app.get("/api/admin", requireAuth, requireRole("admin"), (req, res) => {
   res.json({ ok: true, mensaje: "Solo admin", user: req.user });
 });
 
-app.get(
-  "/api/operario",
-  requireAuth,
-  requireRole("admin", "operario"),
-  (req, res) => {
-    res.json({ ok: true, mensaje: "Admin u operario", user: req.user });
-  }
-);
+app.get("/api/operario", requireAuth, requireRole("admin", "operario"), (req, res) => {
+  res.json({ ok: true, mensaje: "Admin u operario", user: req.user });
+});
 
 // Server
 const PORT = process.env.PORT || 3000;

@@ -247,7 +247,7 @@ export async function archivarPedidoService(pool, { pedidoId }) {
   const id = Number(pedidoId);
   if (!id) return { ok: false, error: "Pedido inválido" };
 
-  // Solo se puede archivar si está listo o cancelado
+  // Solo se puede archivar si está listo o canceladowsada
   const [rows] = await pool.query(
     `SELECT estado, archivado FROM eco_pedido WHERE id = ? LIMIT 1`,
     [id]

@@ -140,6 +140,11 @@ export async function detallePedido(req, res) {
     const data = await obtenerDetallePedido(pool, id);
     if (!data) return res.status(404).json({ ok: false, error: "Pedido no encontrado" });
 
+    // ✅ cliente: solo puede ver su propio pedido
+    if (req.user?.rol === "cliente" && Number(data.usuario_id) !== Number(req.user.id)) {
+      return res.status(403).json({ ok: false, error: "Sin permisos" });
+    }
+
     return res.json({ ok: true, data });
   } catch (err) {
     console.error("detallePedido error:", err);

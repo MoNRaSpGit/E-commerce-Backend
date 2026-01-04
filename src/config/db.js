@@ -15,6 +15,7 @@ export function createPool() {
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    timezone: "-03:00", // Uruguay
+    timezone: "Z",
+
   });
 }

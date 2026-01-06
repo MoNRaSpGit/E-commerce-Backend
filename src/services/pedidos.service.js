@@ -1,147 +1,176 @@
-  const ESTADOS = new Set(["pendiente", "en_proceso", "listo", "cancelado"]);
+const ESTADOS = new Set(["pendiente", "en_proceso", "listo", "cancelado"]);
 
-  function normalizeItems(items) {
-    // items: [{ productoId, cantidad }]
-    const clean = [];
-    for (const it of items) {
-      const productoId = Number(it?.productoId);
-      const cantidad = Number(it?.cantidad);
-      if (!productoId || cantidad <= 0 || !Number.isFinite(cantidad)) continue;
-      clean.push({ productoId, cantidad: Math.floor(cantidad) });
-    }
-    return clean;
+function normalizeItems(items) {
+  // items: [{ productoId, cantidad }]
+  const clean = [];
+  for (const it of items) {
+    const productoId = Number(it?.productoId);
+    const cantidad = Number(it?.cantidad);
+    if (!productoId || cantidad <= 0 || !Number.isFinite(cantidad)) continue;
+    clean.push({ productoId, cantidad: Math.floor(cantidad) });
   }
+  return clean;
+}
 
-  export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, meta }) {
-    const uid = Number(usuarioId);
-    if (!uid) return { ok: false, error: "Usuario inválido" };
+export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, meta }) {
+  const uid = Number(usuarioId);
+  if (!uid) return { ok: false, error: "Usuario inválido" };
 
-    const cleanItems = normalizeItems(items);
-    if (cleanItems.length === 0) return { ok: false, error: "Items inválidos" };
+  const cleanItems = normalizeItems(items);
+  if (cleanItems.length === 0) return { ok: false, error: "Items inválidos" };
 
-    // Traer productos reales desde DB (NO confiar en precios del front)
-    const ids = [...new Set(cleanItems.map((x) => x.productoId))];
-    const placeholders = ids.map(() => "?").join(",");
+  // Traer productos reales desde DB (NO confiar en precios del front)
+  const ids = [...new Set(cleanItems.map((x) => x.productoId))];
+  const placeholders = ids.map(() => "?").join(",");
 
-    const [rows] = await pool.query(
-      `SELECT id, name, price, status
+  const [rows] = await pool.query(
+    `SELECT id, name, price, status, stock
       FROM productos_test
       WHERE id IN (${placeholders})`,
-      ids
-    );
+    ids
+  );
 
-    const byId = new Map(rows.map((r) => [Number(r.id), r]));
+  const byId = new Map(rows.map((r) => [Number(r.id), r]));
 
-    // Validar que existan y estén activos
+  // Validar que existan, estén activos y haya stock
+  for (const it of cleanItems) {
+    const p = byId.get(it.productoId);
+    if (!p) return { ok: false, error: `Producto ${it.productoId} no existe` };
+    if (p.status !== "activo") return { ok: false, error: `Producto ${it.productoId} no está activo` };
+
+    const stock = Number(p.stock ?? 0);
+    if (stock < it.cantidad) {
+      return { ok: false, error: `Sin stock para "${p.name}" (disp: ${stock})` };
+    }
+  }
+
+  // Construir items finales con snapshot
+  const finalItems = cleanItems.map((it) => {
+    const p = byId.get(it.productoId);
+    const precio = Number(p.price) || 0;
+    const subtotal = precio * it.cantidad;
+
+    return {
+      producto_id: it.productoId,
+      nombre_snapshot: p.name,
+      precio_unitario_snapshot: precio,
+      cantidad: it.cantidad,
+      subtotal,
+    };
+  });
+
+  const total = finalItems.reduce((acc, x) => acc + x.subtotal, 0);
+
+  // Transacción
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // Descontar stock (atómico por producto)
     for (const it of cleanItems) {
-      const p = byId.get(it.productoId);
-      if (!p) return { ok: false, error: `Producto ${it.productoId} no existe` };
-      if (p.status !== "activo") return { ok: false, error: `Producto ${it.productoId} no está activo` };
+      const [u] = await conn.query(
+        `UPDATE productos_test
+     SET stock = stock - ?
+     WHERE id = ? AND stock >= ?`,
+        [it.cantidad, it.productoId, it.cantidad]
+      );
+
+      if (!u.affectedRows) {
+        // por si cambió el stock entre el SELECT y el UPDATE (protección extra)
+        const p = byId.get(it.productoId);
+        throw new Error(`SIN_STOCK:${p?.name || it.productoId}`);
+      }
     }
 
-    // Construir items finales con snapshot
-    const finalItems = cleanItems.map((it) => {
-      const p = byId.get(it.productoId);
-      const precio = Number(p.price) || 0;
-      const subtotal = precio * it.cantidad;
-
-      return {
-        producto_id: it.productoId,
-        nombre_snapshot: p.name,
-        precio_unitario_snapshot: precio,
-        cantidad: it.cantidad,
-        subtotal,
-      };
-    });
-
-    const total = finalItems.reduce((acc, x) => acc + x.subtotal, 0);
-
-    // Transacción
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-
-      const [insPedido] = await conn.query(
-        `INSERT INTO eco_pedido
+    const [insPedido] = await conn.query(
+      `INSERT INTO eco_pedido
           (usuario_id, estado, total, moneda,
           nombre_receptor, telefono_receptor, direccion_entrega, notas,
           creado_por_ip, creado_por_user_agent)
         VALUES (?, 'pendiente', ?, 'UYU', ?, ?, ?, ?, ?, ?)`,
-        [
-          uid,
-          total,
-          entrega?.nombre_receptor || null,
-          entrega?.telefono_receptor || null,
-          entrega?.direccion_entrega || null,
-          entrega?.notas || null,
-          meta?.ip || null,
-          meta?.userAgent || null,
-        ]
-      );
+      [
+        uid,
+        total,
+        entrega?.nombre_receptor || null,
+        entrega?.telefono_receptor || null,
+        entrega?.direccion_entrega || null,
+        entrega?.notas || null,
+        meta?.ip || null,
+        meta?.userAgent || null,
+      ]
+    );
 
-      const pedidoId = insPedido.insertId;
+    const pedidoId = insPedido.insertId;
 
-      // Bulk insert items
-      const values = finalItems.map((x) => [
-        pedidoId,
-        x.producto_id,
-        x.nombre_snapshot,
-        x.precio_unitario_snapshot,
-        x.cantidad,
-        x.subtotal,
-      ]);
+    // Bulk insert items
+    const values = finalItems.map((x) => [
+      pedidoId,
+      x.producto_id,
+      x.nombre_snapshot,
+      x.precio_unitario_snapshot,
+      x.cantidad,
+      x.subtotal,
+    ]);
 
-      await conn.query(
-        `INSERT INTO eco_pedido_item
+    await conn.query(
+      `INSERT INTO eco_pedido_item
           (pedido_id, producto_id, nombre_snapshot, precio_unitario_snapshot, cantidad, subtotal)
         VALUES ?`,
-        [values]
-      );
+      [values]
+    );
 
-      await conn.commit();
+    await conn.commit();
 
-      return {
-        ok: true,
-        pedido: {
-          id: Number(pedidoId),
-          estado: "pendiente",
-          total,
-          moneda: "UYU",
-        },
-      };
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
+    return {
+      ok: true,
+      pedido: {
+        id: Number(pedidoId),
+        estado: "pendiente",
+        total,
+        moneda: "UYU",
+      },
+    };
+  } catch (err) {
+    await conn.rollback();
+
+    const msg = String(err?.message || "");
+    if (msg.startsWith("SIN_STOCK:")) {
+      const name = msg.split("SIN_STOCK:")[1] || "producto";
+      return { ok: false, error: `Sin stock para "${name}"` };
     }
-  }
 
-  export async function obtenerPedidosDeUsuario(pool, usuarioId) {
-    const uid = Number(usuarioId);
-    const [rows] = await pool.query(
-      `SELECT id, estado, total, moneda, created_at, updated_at
+    throw err;
+  }
+  finally {
+    conn.release();
+  }
+}
+
+export async function obtenerPedidosDeUsuario(pool, usuarioId) {
+  const uid = Number(usuarioId);
+  const [rows] = await pool.query(
+    `SELECT id, estado, total, moneda, created_at, updated_at
       FROM eco_pedido
       WHERE usuario_id = ?
       ORDER BY created_at DESC`,
-      [uid]
-    );
-    return rows;
+    [uid]
+  );
+  return rows;
+}
+
+export async function obtenerPedidos(pool, { estado }) {
+  if (estado && !ESTADOS.has(estado)) return [];
+
+  const params = [];
+  let where = "WHERE p.archivado = 0";
+  if (estado) {
+    where += " AND p.estado = ?";
+    params.push(estado);
   }
 
-  export async function obtenerPedidos(pool, { estado }) {
-    if (estado && !ESTADOS.has(estado)) return [];
 
-    const params = [];
-    let where = "WHERE p.archivado = 0";
-    if (estado) {
-      where += " AND p.estado = ?";
-      params.push(estado);
-    }
-
-
-    const [rows] = await pool.query(
-      `SELECT
+  const [rows] = await pool.query(
+    `SELECT
     p.id,
     p.usuario_id,
     u.email AS usuario_email,
@@ -156,117 +185,117 @@
       ${where}
       ORDER BY p.created_at DESC
       LIMIT 200`,
-      params
-    );
+    params
+  );
 
-    return rows;
-  }
+  return rows;
+}
 
-  export async function actualizarEstadoPedido(pool, { pedidoId, estado }) {
-    const id = Number(pedidoId);
-    if (!id) return { ok: false, error: "Pedido inválido" };
-    if (!ESTADOS.has(estado)) return { ok: false, error: "Estado inválido" };
+export async function actualizarEstadoPedido(pool, { pedidoId, estado }) {
+  const id = Number(pedidoId);
+  if (!id) return { ok: false, error: "Pedido inválido" };
+  if (!ESTADOS.has(estado)) return { ok: false, error: "Estado inválido" };
 
-    // 1) Leer estado actual
-    const [rows] = await pool.query(
-      `SELECT estado FROM eco_pedido WHERE id = ? LIMIT 1`,
-      [id]
-    );
+  // 1) Leer estado actual
+  const [rows] = await pool.query(
+    `SELECT estado FROM eco_pedido WHERE id = ? LIMIT 1`,
+    [id]
+  );
 
-    const actual = rows?.[0]?.estado;
-    if (!actual) return { ok: false, error: "Pedido no encontrado" };
+  const actual = rows?.[0]?.estado;
+  if (!actual) return { ok: false, error: "Pedido no encontrado" };
 
-    // 2) Si no cambia, OK (idempotente)
-    if (actual === estado) {
-      return { ok: true, pedidoId: id, estado };
-    }
-
-    // 3) Validar transición
-    const ALLOWED = {
-      pendiente: new Set(["en_proceso", "cancelado"]),
-      en_proceso: new Set(["listo", "cancelado"]),
-      listo: new Set([]),
-      cancelado: new Set([]),
-    };
-
-    const allowedNext = ALLOWED[actual] || new Set();
-    if (!allowedNext.has(estado)) {
-      return {
-        ok: false,
-        error: `Transición inválida: ${actual} → ${estado}`,
-      };
-    }
-
-    // 4) Actualizar
-    const [r] = await pool.query(
-      `UPDATE eco_pedido
-      SET estado = ?, updated_at = NOW()
-      WHERE id = ?`,
-      [estado, id]
-    );
-
-    if (!r.affectedRows) return { ok: false, error: "Pedido no encontrado" };
-
+  // 2) Si no cambia, OK (idempotente)
+  if (actual === estado) {
     return { ok: true, pedidoId: id, estado };
   }
 
+  // 3) Validar transición
+  const ALLOWED = {
+    pendiente: new Set(["en_proceso", "cancelado"]),
+    en_proceso: new Set(["listo", "cancelado"]),
+    listo: new Set([]),
+    cancelado: new Set([]),
+  };
 
-  export async function obtenerDetallePedido(pool, pedidoId) {
-    const id = Number(pedidoId);
-    if (!id) return null;
+  const allowedNext = ALLOWED[actual] || new Set();
+  if (!allowedNext.has(estado)) {
+    return {
+      ok: false,
+      error: `Transición inválida: ${actual} → ${estado}`,
+    };
+  }
 
-    const [pedRows] = await pool.query(
-      `SELECT
+  // 4) Actualizar
+  const [r] = await pool.query(
+    `UPDATE eco_pedido
+      SET estado = ?, updated_at = NOW()
+      WHERE id = ?`,
+    [estado, id]
+  );
+
+  if (!r.affectedRows) return { ok: false, error: "Pedido no encontrado" };
+
+  return { ok: true, pedidoId: id, estado };
+}
+
+
+export async function obtenerDetallePedido(pool, pedidoId) {
+  const id = Number(pedidoId);
+  if (!id) return null;
+
+  const [pedRows] = await pool.query(
+    `SELECT
           p.id, p.usuario_id, u.email AS usuario_email,
           p.estado, p.total, p.moneda, p.created_at, p.updated_at
       FROM eco_pedido p
       JOIN eco_usuario u ON u.id = p.usuario_id
       WHERE p.id = ?
       LIMIT 1`,
-      [id]
-    );
+    [id]
+  );
 
-    const pedido = pedRows?.[0];
-    if (!pedido) return null;
+  const pedido = pedRows?.[0];
+  if (!pedido) return null;
 
-    const [items] = await pool.query(
-      `SELECT
+  const [items] = await pool.query(
+    `SELECT
           id, pedido_id, producto_id,
           nombre_snapshot, precio_unitario_snapshot, cantidad, subtotal
       FROM eco_pedido_item
       WHERE pedido_id = ?
       ORDER BY id ASC`,
-      [id]
-    );
+    [id]
+  );
 
-    return { ...pedido, items };
+  return { ...pedido, items };
+}
+
+
+export async function archivarPedidoService(pool, { pedidoId }) {
+  const id = Number(pedidoId);
+  if (!id) return { ok: false, error: "Pedido inválido" };
+
+  // Solo se puede archivar si está listo o canceladowsada
+  const [rows] = await pool.query(
+    `SELECT estado, archivado FROM eco_pedido WHERE id = ? LIMIT 1`,
+    [id]
+  );
+
+  const p = rows?.[0];
+  if (!p) return { ok: false, error: "Pedido no encontrado" };
+  if (Number(p.archivado) === 1) return { ok: true, pedidoId: id, archivado: true };
+
+  if (p.estado !== "listo" && p.estado !== "cancelado") {
+    return { ok: false, error: "Solo se puede archivar si está listo o cancelado" };
   }
 
+  await pool.query(
+    `UPDATE eco_pedido SET archivado = 1, updated_at = NOW() WHERE id = ?`,
+    [id]
+  );
 
-  export async function archivarPedidoService(pool, { pedidoId }) {
-    const id = Number(pedidoId);
-    if (!id) return { ok: false, error: "Pedido inválido" };
-
-    // Solo se puede archivar si está listo o canceladowsada
-    const [rows] = await pool.query(
-      `SELECT estado, archivado FROM eco_pedido WHERE id = ? LIMIT 1`,
-      [id]
-    );
-
-    const p = rows?.[0];
-    if (!p) return { ok: false, error: "Pedido no encontrado" };
-    if (Number(p.archivado) === 1) return { ok: true, pedidoId: id, archivado: true };
-
-    if (p.estado !== "listo" && p.estado !== "cancelado") {
-      return { ok: false, error: "Solo se puede archivar si está listo o cancelado" };
-    }
-
-    await pool.query(
-      `UPDATE eco_pedido SET archivado = 1, updated_at = NOW() WHERE id = ?`,
-      [id]
-    );
-
-    return { ok: true, pedidoId: id, archivado: true };
-  }
+  return { ok: true, pedidoId: id, archivado: true };
+}
 
 

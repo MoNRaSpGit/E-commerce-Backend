@@ -32,6 +32,8 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
 
   const byId = new Map(rows.map((r) => [Number(r.id), r]));
 
+  const repoInsertados = new Set();
+
   // Validar que existan, estén activos y haya stock
   for (const it of cleanItems) {
     const p = byId.get(it.productoId);
@@ -65,7 +67,7 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-
+    const repoInsertados = new Set();
     // Descontar stock (atómico por producto)
     for (const it of cleanItems) {
       const [u] = await conn.query(
@@ -80,6 +82,31 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
         const p = byId.get(it.productoId);
         throw new Error(`SIN_STOCK:${p?.name || it.productoId}`);
       }
+
+
+
+
+      // Leer stock resultante (ya descontado)
+      const [[rowStock]] = await conn.query(
+        `SELECT stock FROM productos_test WHERE id = ?`,
+        [it.productoId]
+      );
+
+      const stockResultante = Number(rowStock?.stock ?? 0);
+
+      // Si quedó bajo/crítico, registrar evento histórico
+      if (stockResultante <= 3 && !repoInsertados.has(it.productoId)) {
+        repoInsertados.add(it.productoId);
+
+        const nivel = stockResultante === 0 ? "critico" : "bajo";
+
+        await conn.query(
+          `INSERT INTO eco_reposicion_alerta (producto_id, stock_en_evento, nivel)
+           VALUES (?, ?, ?)`,
+          [it.productoId, stockResultante, nivel]
+        );
+      }
+
     }
 
     const [insPedido] = await conn.query(

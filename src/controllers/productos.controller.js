@@ -70,6 +70,7 @@ export async function actualizarProducto(req, res) {
       price,
       image,
       status, // activo | inactivo
+      stock,
     } = req.body || {};
 
     const fields = [];
@@ -83,6 +84,20 @@ export async function actualizarProducto(req, res) {
       fields.push("price = ?");
       values.push(price);
     }
+    if (stock !== undefined) {
+      const n = Number(stock);
+
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+        return res.status(400).json({
+          ok: false,
+          error: "Stock inválido (debe ser entero >= 0)",
+        });
+      }
+
+      fields.push("stock = ?");
+      values.push(n);
+    }
+
     if (image !== undefined) {
       fields.push("image = ?");
       values.push(image);

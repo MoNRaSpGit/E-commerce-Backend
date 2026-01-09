@@ -1,4 +1,6 @@
 import { emitStock } from "../realtime/stockHub.js"; // arriba del archivo
+import { emitStaff } from "../realtime/pedidosHub.js";
+
 
 const ESTADOS = new Set(["pendiente", "en_proceso", "listo", "cancelado"]);
 
@@ -35,6 +37,8 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
   const byId = new Map(rows.map((r) => [Number(r.id), r]));
 
   const repoInsertados = new Set();
+  const repoUpdates = new Set(); // productos que deben disparar reposicion_update
+
 
   // Validar que existan, estén activos y haya stock
   for (const it of cleanItems) {
@@ -111,6 +115,7 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
            VALUES (?, ?, ?)`,
           [it.productoId, stockResultante, nivel]
         );
+        repoUpdates.add(it.productoId);
       }
 
     }
@@ -157,6 +162,11 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
     for (const u of stockUpdates) {
       emitStock("stock_update", u);
     }
+
+    for (const productoId of repoUpdates) {
+      emitStaff("reposicion_update", { productoId });
+    }
+
 
     return {
       ok: true,

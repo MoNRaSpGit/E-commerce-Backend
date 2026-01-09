@@ -2,6 +2,9 @@ import { emitStaff } from "../realtime/pedidosHub.js";
 import { emitStock } from "../realtime/stockHub.js";
 
 
+
+
+
 /**
  * GET /api/productos
  * Público / cliente
@@ -122,6 +125,7 @@ export async function actualizarProducto(req, res) {
     );
     // si vino stock en el body, emitimos update para clientes logueados
     if (stock !== undefined) {
+      
       const [[row]] = await pool.query(
         `SELECT stock FROM productos_test WHERE id = ?`,
         [id]
@@ -131,6 +135,7 @@ export async function actualizarProducto(req, res) {
         productoId: id,
         stock: Number(row?.stock ?? 0),
       });
+      emitStaff("reposicion_update", { productoId: id });
     }
 
 
@@ -139,6 +144,7 @@ export async function actualizarProducto(req, res) {
         ok: false,
         error: "Producto no encontrado",
       });
+      
     }
 
     return res.json({

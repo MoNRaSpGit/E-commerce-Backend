@@ -36,7 +36,7 @@ export async function obtenerProductosAdmin(req, res) {
     const pool = req.app.locals.pool;
 
     const [rows] = await pool.query(
-      "SELECT * FROM productos_test ORDER BY id DESC LIMIT 200"
+      "SELECT * FROM productos_test WHERE id BETWEEN 95 AND 105 ORDER BY id ASC"
     );
 
     return res.json({

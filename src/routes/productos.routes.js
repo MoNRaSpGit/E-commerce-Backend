@@ -1,8 +1,8 @@
-import { Router } from "express";
 import {
   obtenerProductos,
   obtenerProductosAdmin,
   actualizarProducto,
+  ajustarStockProducto,
 } from "../controllers/productos.controller.js";
 
 import { requireAuth, requireRole } from "../middlewares/auth.js";
@@ -36,5 +36,19 @@ router.patch(
   requireRole("admin", "operario"),
   actualizarProducto
 );
+
+/**
+ * Admin / Operario
+ * Ajustar stock (delta + / -)
+ */
+router.patch(
+  "/:id/stock",
+  requireAuth,
+  requireRole("admin", "operario"),
+  ajustarStockProducto
+);
+
+
+
 
 export default router;

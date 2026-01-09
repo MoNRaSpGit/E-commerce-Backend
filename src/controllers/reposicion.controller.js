@@ -18,6 +18,7 @@ export async function listarReposicion(req, res) {
   r.id,
   r.producto_id,
   p.name,
+  p.image,
   p.stock AS stock_actual,
   r.stock_en_evento,
   r.nivel,

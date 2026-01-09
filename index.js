@@ -8,7 +8,8 @@ import authRoutes from "./src/routes/auth.routes.js";
 import { requireAuth, requireRole } from "./src/middlewares/auth.js";
 import pedidosRoutes from "./src/routes/pedidos.routes.js";
 import reposicionRoutes from "./src/routes/reposicion.routes.js";
-import stockRoutes from "../../routes/stock.routes.js";
+import stockRoutes from "../routes/stock.routes.js";
+import stockRoutes from "./src/routes/stock.routes.js";
 
 
 const app = express();

@@ -1,5 +1,5 @@
 import { emitStaff } from "../realtime/pedidosHub.js";
-
+import { emitStock } from "../realtime/stockHub.js";
 
 
 /**
@@ -120,6 +120,19 @@ export async function actualizarProducto(req, res) {
       `UPDATE productos_test SET ${fields.join(", ")} WHERE id = ?`,
       values
     );
+    // si vino stock en el body, emitimos update para clientes logueados
+    if (stock !== undefined) {
+      const [[row]] = await pool.query(
+        `SELECT stock FROM productos_test WHERE id = ?`,
+        [id]
+      );
+
+      emitStock("stock_update", {
+        productoId: id,
+        stock: Number(row?.stock ?? 0),
+      });
+    }
+
 
     if (!r.affectedRows) {
       return res.status(404).json({

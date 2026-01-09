@@ -8,6 +8,7 @@ import authRoutes from "./src/routes/auth.routes.js";
 import { requireAuth, requireRole } from "./src/middlewares/auth.js";
 import pedidosRoutes from "./src/routes/pedidos.routes.js";
 import reposicionRoutes from "./src/routes/reposicion.routes.js";
+import stockRoutes from "../../routes/stock.routes.js";
 
 
 const app = express();
@@ -62,6 +63,8 @@ app.get("/api/admin", requireAuth, requireRole("admin"), (req, res) => {
 app.get("/api/operario", requireAuth, requireRole("admin", "operario"), (req, res) => {
   res.json({ ok: true, mensaje: "Admin u operario", user: req.user });
 });
+
+app.use("/api/stock", stockRoutes);
 
 // Server
 const PORT = process.env.PORT || 3000;

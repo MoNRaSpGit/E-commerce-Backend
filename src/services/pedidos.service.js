@@ -1,3 +1,5 @@
+import { emitStock } from "../realtime/stockHub.js"; // arriba del archivo
+
 const ESTADOS = new Set(["pendiente", "en_proceso", "listo", "cancelado"]);
 
 function normalizeItems(items) {
@@ -68,6 +70,8 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
   try {
     await conn.beginTransaction();
     const repoInsertados = new Set();
+    const stockUpdates = [];
+
     // Descontar stock (atómico por producto)
     for (const it of cleanItems) {
       const [u] = await conn.query(
@@ -93,6 +97,8 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
       );
 
       const stockResultante = Number(rowStock?.stock ?? 0);
+      stockUpdates.push({ productoId: it.productoId, stock: stockResultante });
+
 
       // Si quedó bajo/crítico, registrar evento histórico
       if (stockResultante <= 3 && !repoInsertados.has(it.productoId)) {
@@ -147,6 +153,10 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
     );
 
     await conn.commit();
+
+    for (const u of stockUpdates) {
+      emitStock("stock_update", u);
+    }
 
     return {
       ok: true,

@@ -9,6 +9,7 @@ import { requireAuth, requireRole } from "./src/middlewares/auth.js";
 import pedidosRoutes from "./src/routes/pedidos.routes.js";
 import reposicionRoutes from "./src/routes/reposicion.routes.js";
 import stockRoutes from "./src/routes/stock.routes.js";
+import analyticsRoutes from "./src/routes/analytics.routes.js";
 
 
 const app = express();
@@ -65,6 +66,7 @@ app.get("/api/operario", requireAuth, requireRole("admin", "operario"), (req, re
 });
 
 app.use("/api/stock", stockRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 // Server
 const PORT = process.env.PORT || 3000;

@@ -10,6 +10,9 @@ import pedidosRoutes from "./src/routes/pedidos.routes.js";
 import reposicionRoutes from "./src/routes/reposicion.routes.js";
 import stockRoutes from "./src/routes/stock.routes.js";
 import analyticsRoutes from "./src/routes/analytics.routes.js";
+import pushRoutes from "./src/routes/push.routes.js";
+import pushRoutes from "./src/routes/push.routes.js";
+
 
 
 const app = express();
@@ -51,6 +54,9 @@ app.use("/api/productos", productosRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/pedidos", pedidosRoutes);
 app.use("/api/reposicion", reposicionRoutes);
+app.use("/api/push", pushRoutes);
+app.use("/api/push", pushRoutes);
+
 
 // Rutas protegidas (solo para pruebas de roles)
 app.get("/api/privado", requireAuth, (req, res) => {

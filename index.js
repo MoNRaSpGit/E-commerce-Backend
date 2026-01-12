@@ -54,7 +54,7 @@ app.use("/api/productos", productosRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/pedidos", pedidosRoutes);
 app.use("/api/reposicion", reposicionRoutes);
-app.use("/api/push", pushRoutes);
+
 app.use("/api/push", pushRoutes);
 
 

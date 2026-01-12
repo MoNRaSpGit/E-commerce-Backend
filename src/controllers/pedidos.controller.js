@@ -9,6 +9,7 @@ import {
 //import { emitPedidoCreado, emitPedidoEstado } from "../realtime/pedidosHub.js";
 import { emitStaff, emitToUser } from "../realtime/pedidosHub.js";
 import { sendPushToRoles } from "../services/push.service.js";
+import { sendPushToUser } from "../services/push.service.js";
 
 
 export async function crearPedido(req, res) {
@@ -41,7 +42,7 @@ export async function crearPedido(req, res) {
       moneda: result.pedido.moneda,
       at: new Date().toISOString(),
     });
-    
+
     // 🔔 PUSH a staff (operario/admin) - funciona aunque tengan la web cerrada
     sendPushToRoles(pool, ["operario", "admin"], {
       type: "pedido_nuevo_staff",
@@ -103,17 +104,21 @@ export async function cambiarEstadoPedido(req, res) {
       return res.status(400).json({ ok: false, error: "id y estado requeridos" });
     }
 
+    // leer estado actual y dueño (para detectar transición a "listo")
+    const [prevRows] = await pool.query(
+      `SELECT estado, usuario_id FROM eco_pedido WHERE id = ? LIMIT 1`,
+      [id]
+    );
+    const prevEstado = prevRows?.[0]?.estado;
+    const usuarioId = prevRows?.[0]?.usuario_id;
+
+
     const result = await actualizarEstadoPedido(pool, { pedidoId: id, estado });
 
     // ⛔ si falló, NO emitimos SSE
     if (!result.ok) return res.status(400).json(result);
 
-    // buscar el usuario dueño del pedido
-    const [ownRows] = await pool.query(
-      `SELECT usuario_id FROM eco_pedido WHERE id = ? LIMIT 1`,
-      [id]
-    );
-    const usuarioId = ownRows?.[0]?.usuario_id;
+
 
     // 1) avisar a staff (siempre)
     emitStaff("pedido_estado", {
@@ -130,6 +135,19 @@ export async function cambiarEstadoPedido(req, res) {
         at: new Date().toISOString(),
       });
     }
+
+    // 🔔 PUSH al cliente solo si la transición real llega a "listo"
+    if (usuarioId && prevEstado !== "listo" && estado === "listo") {
+      sendPushToUser(pool, usuarioId, {
+        type: "pedido_listo_cliente",
+        title: "Tu pedido está listo ✅",
+        body: `Pedido #${id} listo para retirar`,
+        pedidoId: id,
+        estado: "listo",
+        at: new Date().toISOString(),
+      }).catch((e) => console.error("push cliente error:", e));
+    }
+
 
     return res.json(result);
   } catch (err) {

@@ -100,3 +100,53 @@ export async function sendPushToUser(pool, usuarioId, payload) {
 
   return { ok: true, sent, removed, total: rows.length };
 }
+
+export async function sendPushToRoles(pool, roles = [], payload) {
+  ensureVapidConfigured();
+
+  if (!Array.isArray(roles) || roles.length === 0) {
+    return { ok: true, sent: 0, removed: 0, total: 0 };
+  }
+
+  // 1) buscar subscripciones de usuarios con esos roles
+  const placeholders = roles.map(() => "?").join(",");
+
+  const [rows] = await pool.query(
+    `
+    SELECT s.endpoint, s.p256dh, s.auth
+    FROM eco_push_subscription s
+    JOIN eco_usuario u ON u.id = s.usuario_id
+    WHERE u.rol IN (${placeholders}) AND u.activo = 1
+    `,
+    roles
+  );
+
+  const data = JSON.stringify(payload ?? {});
+
+  let sent = 0;
+  let removed = 0;
+
+  for (const r of rows) {
+    const subscription = {
+      endpoint: r.endpoint,
+      keys: { p256dh: r.p256dh, auth: r.auth },
+    };
+
+    try {
+      await webpush.sendNotification(subscription, data);
+      sent++;
+    } catch (err) {
+      const status = err?.statusCode || err?.status;
+
+      if (status === 410 || status === 404) {
+        await deleteSubscriptionByEndpoint(pool, r.endpoint);
+        removed++;
+      } else {
+        console.error("sendNotification error:", status, err?.message || err);
+      }
+    }
+  }
+
+  return { ok: true, sent, removed, total: rows.length };
+}
+

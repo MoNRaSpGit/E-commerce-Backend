@@ -8,6 +8,7 @@ import {
 } from "../services/pedidos.service.js";
 //import { emitPedidoCreado, emitPedidoEstado } from "../realtime/pedidosHub.js";
 import { emitStaff, emitToUser } from "../realtime/pedidosHub.js";
+import { sendPushToRoles } from "../services/push.service.js";
 
 
 export async function crearPedido(req, res) {
@@ -40,6 +41,16 @@ export async function crearPedido(req, res) {
       moneda: result.pedido.moneda,
       at: new Date().toISOString(),
     });
+    
+    // 🔔 PUSH a staff (operario/admin) - funciona aunque tengan la web cerrada
+    sendPushToRoles(pool, ["operario", "admin"], {
+      type: "pedido_nuevo_staff",
+      title: "Nuevo pedido 📦",
+      body: `Pedido #${result.pedido.id} - Total ${result.pedido.total} ${result.pedido.moneda}`,
+      pedidoId: result.pedido.id,
+      at: new Date().toISOString(),
+    }).catch((e) => console.error("push staff error:", e));
+
 
     // b) avisar al cliente (para MisPedidos SSE)
     emitToUser(req.user.id, "pedido_creado", {

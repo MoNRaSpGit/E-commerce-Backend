@@ -53,14 +53,21 @@ export async function crearPedido(req, res) {
     }).catch((e) => console.error("push staff error:", e));
 
 
-    // b) avisar al cliente (para MisPedidos SSE)
+    const [[pRow]] = await pool.query(
+      `SELECT created_at, updated_at FROM eco_pedido WHERE id = ? LIMIT 1`,
+      [result.pedido.id]
+    );
+
     emitToUser(req.user.id, "pedido_creado", {
       pedidoId: result.pedido.id,
       estado: result.pedido.estado,
       total: result.pedido.total,
       moneda: result.pedido.moneda,
+      created_at: pRow?.created_at || null,
+      updated_at: pRow?.updated_at || null,
       at: new Date().toISOString(),
     });
+
 
 
 
@@ -127,13 +134,19 @@ export async function cambiarEstadoPedido(req, res) {
       at: new Date().toISOString(),
     });
 
+    const [[pRow]] = await pool.query(
+      `SELECT updated_at FROM eco_pedido WHERE id = ? LIMIT 1`,
+      [id]
+    );
+
     // 2) avisar al dueño del pedido (cliente)
     if (usuarioId) {
-      emitToUser(usuarioId, "pedido_estado", {
-        pedidoId: id,
-        estado,
-        at: new Date().toISOString(),
-      });
+    emitToUser(usuarioId, "pedido_estado", {
+      pedidoId: id,
+      estado,
+      updated_at: pRow?.updated_at || null,
+      at: new Date().toISOString(),
+    });
     }
 
     // 🔔 PUSH al cliente solo si la transición real llega a "listo"

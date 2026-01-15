@@ -49,6 +49,7 @@ export async function crearPedido(req, res) {
       title: "Nuevo pedido 📦",
       body: `Pedido #${result.pedido.id} - Total ${result.pedido.total} ${result.pedido.moneda}`,
       pedidoId: result.pedido.id,
+      url: "#/operario/pedidos",
       at: new Date().toISOString(),
     }).catch((e) => console.error("push staff error:", e));
 
@@ -141,12 +142,12 @@ export async function cambiarEstadoPedido(req, res) {
 
     // 2) avisar al dueño del pedido (cliente)
     if (usuarioId) {
-    emitToUser(usuarioId, "pedido_estado", {
-      pedidoId: id,
-      estado,
-      updated_at: pRow?.updated_at || null,
-      at: new Date().toISOString(),
-    });
+      emitToUser(usuarioId, "pedido_estado", {
+        pedidoId: id,
+        estado,
+        updated_at: pRow?.updated_at || null,
+        at: new Date().toISOString(),
+      });
     }
 
     // 🔔 PUSH al cliente solo si la transición real llega a "listo"
@@ -157,8 +158,10 @@ export async function cambiarEstadoPedido(req, res) {
         body: `Pedido #${id} listo para retirar`,
         pedidoId: id,
         estado: "listo",
+        url: "#/mis-pedidos",
         at: new Date().toISOString(),
-      }).catch((e) => console.error("push cliente error:", e));
+      }
+      ).catch((e) => console.error("push cliente error:", e));
     }
 
 

@@ -33,6 +33,10 @@ export async function crearPedido(req, res) {
 
     if (!result.ok) return res.status(400).json(result);
 
+    const [[pRow]] = await pool.query(
+      `SELECT created_at, updated_at FROM eco_pedido WHERE id = ? LIMIT 1`,
+      [result.pedido.id]
+    );
     // a) avisar a staff (operario/admin)
     emitStaff("pedido_creado", {
       usuarioId: req.user.id,
@@ -40,6 +44,8 @@ export async function crearPedido(req, res) {
       estado: result.pedido.estado,
       total: result.pedido.total,
       moneda: result.pedido.moneda,
+      created_at: pRow?.created_at || null,
+      updated_at: pRow?.updated_at || null,
       at: new Date().toISOString(),
     });
 
@@ -54,12 +60,10 @@ export async function crearPedido(req, res) {
     }).catch((e) => console.error("push staff error:", e));
 
 
-    const [[pRow]] = await pool.query(
-      `SELECT created_at, updated_at FROM eco_pedido WHERE id = ? LIMIT 1`,
-      [result.pedido.id]
-    );
 
-    emitToUser(req.user.id, "pedido_creado", {
+
+    emitStaff("pedido_creado", {
+      usuarioId: req.user.id,
       pedidoId: result.pedido.id,
       estado: result.pedido.estado,
       total: result.pedido.total,

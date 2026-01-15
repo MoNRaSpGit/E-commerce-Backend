@@ -28,6 +28,23 @@ export async function obtenerProductos(req, res) {
     }
 
     // Búsqueda FULLTEXT (MySQL 8)
+    // ✅ Híbrido: 1–2 letras => LIKE prefix; 3+ => FULLTEXT
+    if (q.length < 3) {
+      const like = `${q}%`;
+
+      const [rows] = await pool.query(
+        `SELECT *
+     FROM productos_test
+     WHERE status = 'activo'
+       AND (name LIKE ? OR barcode LIKE ? OR barcode_normalized LIKE ?)
+     ORDER BY name ASC
+     LIMIT 100`,
+        [like, like, like]
+      );
+
+      return res.json({ ok: true, data: rows });
+    }
+
     const [rows] = await pool.query(
       `SELECT *,
           MATCH(name, description) AGAINST (? IN BOOLEAN MODE) AS score
@@ -40,6 +57,7 @@ export async function obtenerProductos(req, res) {
     );
 
     return res.json({ ok: true, data: rows });
+
 
 
     return res.json({

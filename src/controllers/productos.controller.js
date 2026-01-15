@@ -12,58 +12,88 @@ import { emitStock } from "../realtime/stockHub.js";
 export async function obtenerProductos(req, res) {
   try {
     const pool = req.app.locals.pool;
-
     const q = String(req.query?.q || "").trim();
 
-    // ⚠️ por ahora sin limit para “ver 100" (modo prueba)
+    // ✅ sin búsqueda → primeros 200 activos
     if (!q) {
       const [rows] = await pool.query(
-        `SELECT * FROM productos_test
-     WHERE status = 'activo'
-     ORDER BY name ASC
-     LIMIT 100`
+        `SELECT *
+         FROM productos_test
+         WHERE status = 'activo'
+         ORDER BY name ASC
+         LIMIT 200`
       );
 
       return res.json({ ok: true, data: rows });
     }
 
-    // Búsqueda FULLTEXT (MySQL 8)
-    // ✅ Híbrido: 1–2 letras => LIKE prefix; 3+ => FULLTEXT
-    if (q.length <= 3) {
-      const like = `${q}%`;
+    // 🔹 1–2 letras → LIKE (rápido, sirve para 1 tecla)
+    if (q.length <= 8) {
+
+
+      // ✅ LIKE PRO por palabras (agua fast → %agua% AND %fast%)
+      const terms = q
+        .toLowerCase()
+        .split(/\s+/)
+        .map(t => t.trim())
+        .filter(Boolean);
+
+      // armamos: (name LIKE ? OR description LIKE ?) AND (name LIKE ? OR description LIKE ?) ...
+      const whereParts = [];
+      const values = [];
+
+      for (const term of terms) {
+        whereParts.push(`(
+    name LIKE ?
+    OR description LIKE ?
+    OR barcode LIKE ?
+    OR barcode_normalized LIKE ?
+  )`);
+
+        const like = `%${term}%`;
+        values.push(like, like, like, like);
+      }
+
+      const whereSql = whereParts.join(" AND ");
 
       const [rows] = await pool.query(
         `SELECT *
-     FROM productos_test
-     WHERE status = 'activo'
-       AND (name LIKE ? OR barcode LIKE ? OR barcode_normalized LIKE ?)
-     ORDER BY name ASC
-     LIMIT 100`,
-        [like, like, like]
+   FROM productos_test
+   WHERE status = 'activo'
+     AND ${whereSql}
+   ORDER BY name ASC
+   LIMIT 200`,
+        values
       );
+
+      return res.json({ ok: true, data: rows });
+
 
       return res.json({ ok: true, data: rows });
     }
 
+    // 🔹 3+ letras → FULLTEXT (relevancia)
+    const terms = q
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    // todas las palabras obligatorias: +agua +fast
+    const qBoolean = terms.map((t) => `+${t}`).join(" ");
+
     const [rows] = await pool.query(
       `SELECT *,
-          MATCH(name, description) AGAINST (? IN BOOLEAN MODE) AS score
-   FROM productos_test
-   WHERE status = 'activo'
-     AND MATCH(name, description) AGAINST (? IN BOOLEAN MODE)
-   ORDER BY score DESC, name ASC
-   LIMIT 100`,
-      [q, q]
+              MATCH(name, description) AGAINST (? IN BOOLEAN MODE) AS score
+       FROM productos_test
+       WHERE status = 'activo'
+         AND MATCH(name, description) AGAINST (? IN BOOLEAN MODE)
+       ORDER BY score DESC, name ASC
+       LIMIT 200`,
+      [qBoolean, qBoolean]
     );
 
     return res.json({ ok: true, data: rows });
 
-
-
-    return res.json({
-      ok: true,
-      data: rows,
-    });
   } catch (err) {
     console.error("Error obtenerProductos:", err);
     return res.status(500).json({
@@ -72,6 +102,8 @@ export async function obtenerProductos(req, res) {
     });
   }
 }
+
+
 
 /**
  * GET /api/productos/admin

@@ -33,16 +33,16 @@ export async function crearPedido(req, res) {
 
     if (!result.ok) return res.status(400).json(result);
 
-    const [[pRow]] = await pool.query(
-      `SELECT created_at, updated_at FROM eco_pedido WHERE id = ? LIMIT 1`,
-      [result.pedido.id]
+    const [[uRow]] = await pool.query(
+      `SELECT nombre, apellido, email FROM eco_usuario WHERE id = ? LIMIT 1`,
+      [req.user.id]
     );
     // a) avisar a staff (operario/admin)
     emitStaff("pedido_creado", {
       usuarioId: req.user.id,
-      usuarioEmail: req.user.email || null,
-      nombre: req.user.nombre || null,
-      apellido: req.user.apellido || null,
+      usuarioEmail: uRow?.email || req.user.email || null,
+      nombre: uRow?.nombre || null,
+      apellido: uRow?.apellido || null,
 
       pedidoId: result.pedido.id,
       estado: result.pedido.estado,

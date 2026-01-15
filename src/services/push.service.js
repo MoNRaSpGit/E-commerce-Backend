@@ -37,6 +37,15 @@ export async function saveSubscription(pool, { usuarioId, subscription, userAgen
   const uid = Number(usuarioId);
   if (!uid) return { ok: false, error: "Usuario inválido" };
 
+    // (debug) si el endpoint ya existía para otro usuario, lo registramos
+  let reassignedFrom = null;
+  const [prev] = await pool.query(
+    `SELECT usuario_id FROM eco_push_subscription WHERE endpoint = ? LIMIT 1`,
+    [endpoint]
+  );
+  const prevUid = prev?.[0]?.usuario_id ? Number(prev[0].usuario_id) : null;
+  if (prevUid && prevUid !== uid) reassignedFrom = prevUid;
+
   // UPSERT por endpoint (uq_push_endpoint)
   await pool.query(
     `
@@ -52,13 +61,31 @@ export async function saveSubscription(pool, { usuarioId, subscription, userAgen
     [uid, endpoint, p256dh, auth, userAgent || null]
   );
 
-  return { ok: true };
+  return { ok: true, reassignedFrom };
 }
 
 export async function deleteSubscriptionByEndpoint(pool, endpoint) {
-  if (!endpoint) return;
-  await pool.query(`DELETE FROM eco_push_subscription WHERE endpoint = ?`, [endpoint]);
+  if (!endpoint) return { ok: true, deleted: 0 };
+  const [r] = await pool.query(`DELETE FROM eco_push_subscription WHERE endpoint = ?`, [endpoint]);
+  return { ok: true, deleted: Number(r?.affectedRows || 0) };
 }
+
+
+export async function getSubscriptionsByUser(pool, usuarioId) {
+  const uid = Number(usuarioId);
+  if (!uid) return [];
+
+  const [rows] = await pool.query(
+    `SELECT id, usuario_id, endpoint, user_agent, created_at, updated_at
+     FROM eco_push_subscription
+     WHERE usuario_id = ?
+     ORDER BY updated_at DESC, created_at DESC`,
+    [uid]
+  );
+
+  return rows;
+}
+
 
 export async function sendPushToUser(pool, usuarioId, payload) {
   ensureVapidConfigured();

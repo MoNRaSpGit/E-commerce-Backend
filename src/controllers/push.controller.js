@@ -1,4 +1,11 @@
-import { getVapidPublicKey, saveSubscription, sendPushToUser } from "../services/push.service.js";
+import {
+  getVapidPublicKey,
+  saveSubscription,
+  deleteSubscriptionByEndpoint,
+  getSubscriptionsByUser,
+  sendPushToUser,
+} from "../services/push.service.js";
+
 
 export async function vapidPublicKey(req, res) {
   try {
@@ -20,12 +27,50 @@ export async function subscribePush(req, res) {
     });
 
     if (!result.ok) return res.status(400).json(result);
-    return res.json({ ok: true });
+
+    // debug útil: si el endpoint se reasignó desde otro user, lo marcamos
+    if (result.reassignedFrom) {
+      console.log(
+        `[push] endpoint reasignado: ${result.reassignedFrom} -> ${req.user.id}`
+      );
+    }
+
+    return res.json({ ok: true, reassignedFrom: result.reassignedFrom || null });
   } catch (err) {
     console.error("subscribePush error:", err);
     return res.status(500).json({ ok: false, error: "Error interno del servidor" });
   }
 }
+
+export async function myPushSubs(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+    const rows = await getSubscriptionsByUser(pool, req.user.id);
+    return res.json({ ok: true, total: rows.length, data: rows });
+  } catch (err) {
+    console.error("myPushSubs error:", err);
+    return res.status(500).json({ ok: false, error: "Error interno del servidor" });
+  }
+}
+
+export async function unsubscribePush(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+
+    const endpoint = req.body?.endpoint;
+    if (!endpoint) {
+      return res.status(400).json({ ok: false, error: "endpoint requerido" });
+    }
+
+    const result = await deleteSubscriptionByEndpoint(pool, endpoint);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("unsubscribePush error:", err);
+    return res.status(500).json({ ok: false, error: "Error interno del servidor" });
+  }
+}
+
+
 
 export async function testPushMe(req, res) {
   try {

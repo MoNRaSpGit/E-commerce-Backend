@@ -29,7 +29,7 @@ export async function obtenerProductos(req, res) {
 
     // Búsqueda FULLTEXT (MySQL 8)
     // ✅ Híbrido: 1–2 letras => LIKE prefix; 3+ => FULLTEXT
-    if (q.length < 3) {
+    if (q.length <= 3) {
       const like = `${q}%`;
 
       const [rows] = await pool.query(

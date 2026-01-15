@@ -39,6 +39,9 @@ export async function crearPedido(req, res) {
     );
     // a) avisar a staff (operario/admin)
     emitStaff("pedido_creado", {
+      nombre: req.user.nombre || null,
+      usuario_email: req.user.email || null,
+      apellido: req.user.apellido || null,
       usuarioId: req.user.id,
       pedidoId: result.pedido.id,
       estado: result.pedido.estado,
@@ -63,6 +66,9 @@ export async function crearPedido(req, res) {
 
 
     emitStaff("pedido_creado", {
+      nombre: req.user.nombre || null,
+      usuario_email: req.user.email || null,
+      apellido: req.user.apellido || null,
       usuarioId: req.user.id,
       pedidoId: result.pedido.id,
       estado: result.pedido.estado,

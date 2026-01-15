@@ -13,9 +13,34 @@ export async function obtenerProductos(req, res) {
   try {
     const pool = req.app.locals.pool;
 
+    const q = String(req.query?.q || "").trim();
+
+    // ⚠️ por ahora sin limit para “ver 100" (modo prueba)
+    if (!q) {
+      const [rows] = await pool.query(
+        `SELECT * FROM productos_test
+     WHERE status = 'activo'
+     ORDER BY name ASC
+     LIMIT 100`
+      );
+
+      return res.json({ ok: true, data: rows });
+    }
+
+    // Búsqueda FULLTEXT (MySQL 8)
     const [rows] = await pool.query(
-      "SELECT * FROM productos_test WHERE status = 'activo' LIMIT 10"
+      `SELECT *,
+          MATCH(name, description) AGAINST (? IN BOOLEAN MODE) AS score
+   FROM productos_test
+   WHERE status = 'activo'
+     AND MATCH(name, description) AGAINST (? IN BOOLEAN MODE)
+   ORDER BY score DESC, name ASC
+   LIMIT 100`,
+      [q, q]
     );
+
+    return res.json({ ok: true, data: rows });
+
 
     return res.json({
       ok: true,
@@ -125,7 +150,7 @@ export async function actualizarProducto(req, res) {
     );
     // si vino stock en el body, emitimos update para clientes logueados
     if (stock !== undefined) {
-      
+
       const [[row]] = await pool.query(
         `SELECT stock FROM productos_test WHERE id = ?`,
         [id]
@@ -144,7 +169,7 @@ export async function actualizarProducto(req, res) {
         ok: false,
         error: "Producto no encontrado",
       });
-      
+
     }
 
     return res.json({

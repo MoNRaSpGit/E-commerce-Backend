@@ -39,10 +39,11 @@ export async function crearPedido(req, res) {
     );
     // a) avisar a staff (operario/admin)
     emitStaff("pedido_creado", {
-      nombre: req.user.nombre || null,
-      usuario_email: req.user.email || null,
-      apellido: req.user.apellido || null,
       usuarioId: req.user.id,
+      usuarioEmail: req.user.email || null,
+      nombre: req.user.nombre || null,
+      apellido: req.user.apellido || null,
+
       pedidoId: result.pedido.id,
       estado: result.pedido.estado,
       total: result.pedido.total,
@@ -51,6 +52,7 @@ export async function crearPedido(req, res) {
       updated_at: pRow?.updated_at || null,
       at: new Date().toISOString(),
     });
+
 
     // 🔔 PUSH a staff (operario/admin) - funciona aunque tengan la web cerrada
     sendPushToRoles(pool, ["operario", "admin"], {
@@ -61,25 +63,6 @@ export async function crearPedido(req, res) {
       url: "#/operario/pedidos",
       at: new Date().toISOString(),
     }).catch((e) => console.error("push staff error:", e));
-
-
-
-
-    emitStaff("pedido_creado", {
-      nombre: req.user.nombre || null,
-      usuario_email: req.user.email || null,
-      apellido: req.user.apellido || null,
-      usuarioId: req.user.id,
-      pedidoId: result.pedido.id,
-      estado: result.pedido.estado,
-      total: result.pedido.total,
-      moneda: result.pedido.moneda,
-      created_at: pRow?.created_at || null,
-      updated_at: pRow?.updated_at || null,
-      at: new Date().toISOString(),
-    });
-
-
 
 
     return res.status(201).json(result);

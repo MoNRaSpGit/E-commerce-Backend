@@ -38,6 +38,12 @@ export async function crearPedido(req, res) {
       [result.pedido.id]
     );
 
+    // ✅ (MINI FIX) Traer nombre/apellido/email reales del usuario (para SSE staff)
+    const [[uRow]] = await pool.query(
+      `SELECT nombre, apellido, email FROM eco_usuario WHERE id = ? LIMIT 1`,
+      [req.user.id]
+    );
+
     // a) avisar a staff (operario/admin)
     emitStaff("pedido_creado", {
       usuarioId: req.user.id,
@@ -54,7 +60,6 @@ export async function crearPedido(req, res) {
       at: new Date().toISOString(),
     });
 
-
     // 🔔 PUSH a staff (operario/admin) - funciona aunque tengan la web cerrada
     sendPushToRoles(pool, ["operario", "admin"], {
       type: "pedido_nuevo_staff",
@@ -64,7 +69,6 @@ export async function crearPedido(req, res) {
       url: "#/operario/pedidos",
       at: new Date().toISOString(),
     }).catch((e) => console.error("push staff error:", e));
-
 
     return res.status(201).json(result);
   } catch (err) {

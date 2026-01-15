@@ -47,21 +47,34 @@ export async function saveSubscription(pool, { usuarioId, subscription, userAgen
   if (prevUid && prevUid !== uid) reassignedFrom = prevUid;
 
   // UPSERT por endpoint (uq_push_endpoint)
-  await pool.query(
-    `
-    INSERT INTO eco_push_subscription (usuario_id, endpoint, p256dh, auth, user_agent)
-    VALUES (?, ?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-      usuario_id = VALUES(usuario_id),
-      p256dh = VALUES(p256dh),
-      auth = VALUES(auth),
-      user_agent = VALUES(user_agent),
-      updated_at = CURRENT_TIMESTAMP
-    `,
-    [uid, endpoint, p256dh, auth, userAgent || null]
-  );
+ await pool.query(
+  `
+  INSERT INTO eco_push_subscription (usuario_id, endpoint, p256dh, auth, user_agent)
+  VALUES (?, ?, ?, ?, ?)
+  ON DUPLICATE KEY UPDATE
+    usuario_id = VALUES(usuario_id),
+    p256dh = VALUES(p256dh),
+    auth = VALUES(auth),
+    user_agent = VALUES(user_agent),
+    updated_at = CURRENT_TIMESTAMP
+  `,
+  [uid, endpoint, p256dh, auth, userAgent || null]
+);
 
-  return { ok: true, reassignedFrom };
+// ✅ cleanup pro: dejar 1 sola suscripción por “dispositivo” (user_agent) para este usuario
+// evita acumulación de endpoints en la misma PC
+if (userAgent) {
+  await pool.query(
+    `DELETE FROM eco_push_subscription
+     WHERE usuario_id = ?
+       AND user_agent = ?
+       AND endpoint <> ?`,
+    [uid, userAgent, endpoint]
+  );
+}
+
+return { ok: true, reassignedFrom };
+
 }
 
 export async function deleteSubscriptionByEndpoint(pool, endpoint) {

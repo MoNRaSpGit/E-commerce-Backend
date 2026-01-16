@@ -19,11 +19,7 @@ export async function obtenerProductos(req, res) {
   const all = String(process.env.PUBLIC_CATALOG_ALL || "") === "1";
 
   const [rows] = await pool.query(
-    `SELECT *
-     FROM productos_test
-     ${all ? "" : "WHERE status = 'activo'"}
-     ORDER BY name ASC
-     LIMIT 2000`
+    `SELECT * FROM productos_test ORDER BY name ASC`
   );
 
   return res.json({ ok: true, data: rows });

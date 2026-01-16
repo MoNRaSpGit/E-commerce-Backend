@@ -1,5 +1,4 @@
 import {
-  getVapidPublicKey,
   saveSubscription,
   deleteSubscriptionByEndpoint,
   getSubscriptionsByUser,
@@ -7,14 +6,30 @@ import {
 } from "../services/push.service.js";
 
 
+
 export async function vapidPublicKey(req, res) {
+
   try {
-    return res.json({ ok: true, publicKey: getVapidPublicKey() });
+    const publicKey = String(process.env.VAPID_PUBLIC_KEY || "").trim();
+
+    // ✅ modo pro: si no está configurado, NO es error → simplemente “push deshabilitado”
+    if (!publicKey) {
+      return res.status(200).json({
+        ok: true,
+        data: { enabled: false, publicKey: null },
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      data: { enabled: true, publicKey },
+    });
   } catch (err) {
-    console.error("vapidPublicKey error:", err);
-    return res.status(500).json({ ok: false, error: "Error interno del servidor" });
+    console.error("Error getVapidPublicKey:", err);
+    return res.status(500).json({ ok: false, error: "Error obteniendo VAPID key" });
   }
 }
+
 
 export async function subscribePush(req, res) {
   try {

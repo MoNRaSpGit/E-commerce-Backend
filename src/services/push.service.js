@@ -11,13 +11,13 @@ function ensureVapidConfigured() {
   const privateKey = process.env.VAPID_PRIVATE_KEY;
 
   if (!subject || !publicKey || !privateKey) {
-    throw new Error(
-      "Faltan variables VAPID (VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)"
-    );
+    return false; // ✅ no tirar error, solo “push deshabilitado”
   }
 
   webpush.setVapidDetails(subject, publicKey, privateKey);
+  return true;
 }
+
 
 export function getVapidPublicKey() {
   const pk = process.env.VAPID_PUBLIC_KEY;
@@ -37,7 +37,7 @@ export async function saveSubscription(pool, { usuarioId, subscription, userAgen
   const uid = Number(usuarioId);
   if (!uid) return { ok: false, error: "Usuario inválido" };
 
-    // (debug) si el endpoint ya existía para otro usuario, lo registramos
+  // (debug) si el endpoint ya existía para otro usuario, lo registramos
   let reassignedFrom = null;
   const [prev] = await pool.query(
     `SELECT usuario_id FROM eco_push_subscription WHERE endpoint = ? LIMIT 1`,
@@ -47,8 +47,8 @@ export async function saveSubscription(pool, { usuarioId, subscription, userAgen
   if (prevUid && prevUid !== uid) reassignedFrom = prevUid;
 
   // UPSERT por endpoint (uq_push_endpoint)
- await pool.query(
-  `
+  await pool.query(
+    `
   INSERT INTO eco_push_subscription (usuario_id, endpoint, p256dh, auth, user_agent)
   VALUES (?, ?, ?, ?, ?)
   ON DUPLICATE KEY UPDATE
@@ -58,22 +58,22 @@ export async function saveSubscription(pool, { usuarioId, subscription, userAgen
     user_agent = VALUES(user_agent),
     updated_at = CURRENT_TIMESTAMP
   `,
-  [uid, endpoint, p256dh, auth, userAgent || null]
-);
+    [uid, endpoint, p256dh, auth, userAgent || null]
+  );
 
-// ✅ cleanup pro: dejar 1 sola suscripción por “dispositivo” (user_agent) para este usuario
-// evita acumulación de endpoints en la misma PC
-if (userAgent) {
-  await pool.query(
-    `DELETE FROM eco_push_subscription
+  // ✅ cleanup pro: dejar 1 sola suscripción por “dispositivo” (user_agent) para este usuario
+  // evita acumulación de endpoints en la misma PC
+  if (userAgent) {
+    await pool.query(
+      `DELETE FROM eco_push_subscription
      WHERE usuario_id = ?
        AND user_agent = ?
        AND endpoint <> ?`,
-    [uid, userAgent, endpoint]
-  );
-}
+      [uid, userAgent, endpoint]
+    );
+  }
 
-return { ok: true, reassignedFrom };
+  return { ok: true, reassignedFrom };
 
 }
 
@@ -101,7 +101,8 @@ export async function getSubscriptionsByUser(pool, usuarioId) {
 
 
 export async function sendPushToUser(pool, usuarioId, payload) {
-  ensureVapidConfigured();
+  if (!ensureVapidConfigured()) return { ok: true, skipped: true, reason: "vapid_not_configured" };
+
 
   const uid = Number(usuarioId);
   if (!uid) return { ok: false, error: "Usuario inválido" };
@@ -142,7 +143,9 @@ export async function sendPushToUser(pool, usuarioId, payload) {
 }
 
 export async function sendPushToRoles(pool, roles = [], payload) {
-  ensureVapidConfigured();
+  if (!ensureVapidConfigured()) {
+    return { ok: true, skipped: true, reason: "vapid_not_configured", sent: 0, removed: 0, total: 0 };
+  }
 
   if (!Array.isArray(roles) || roles.length === 0) {
     return { ok: true, sent: 0, removed: 0, total: 0 };

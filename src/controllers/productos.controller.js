@@ -14,40 +14,44 @@ export async function obtenerProductos(req, res) {
     const pool = req.app.locals.pool;
     const q = String(req.query?.q || "").trim();
 
-    // ✅ sin búsqueda → primeros 200 activos
+    // ✅ columnas livianas (NO mandamos image base64 en listados)
+    const baseSelect = `
+      SELECT
+        id, name, price, priceOriginal, stock, status,
+        barcode, barcode_normalized, description,
+        (image IS NOT NULL AND LENGTH(image) > 0) AS has_image
+      FROM productos_test
+    `;
+
+    // ✅ sin búsqueda → TODOS
     if (!q) {
-  const all = String(process.env.PUBLIC_CATALOG_ALL || "") === "1";
+      const [rows] = await pool.query(
+        `${baseSelect}
+ WHERE image IS NOT NULL AND LENGTH(image) > 0
+ ORDER BY name ASC`
+      );
 
-  const [rows] = await pool.query(
-    `SELECT * FROM productos_test ORDER BY name ASC`
-  );
+      return res.json({ ok: true, data: rows });
+    }
 
-  return res.json({ ok: true, data: rows });
-}
-
-
-    // 🔹 1–2 letras → LIKE (rápido, sirve para 1 tecla)
+    // 🔹 búsqueda corta → LIKE por palabras
     if (q.length <= 8) {
-
-
-      // ✅ LIKE PRO por palabras (agua fast → %agua% AND %fast%)
       const terms = q
         .toLowerCase()
         .split(/\s+/)
-        .map(t => t.trim())
+        .map((t) => t.trim())
         .filter(Boolean);
 
-      // armamos: (name LIKE ? OR description LIKE ?) AND (name LIKE ? OR description LIKE ?) ...
       const whereParts = [];
       const values = [];
 
       for (const term of terms) {
         whereParts.push(`(
-    name LIKE ?
-    OR description LIKE ?
-    OR barcode LIKE ?
-    OR barcode_normalized LIKE ?
-  )`);
+          name LIKE ?
+          OR description LIKE ?
+          OR barcode LIKE ?
+          OR barcode_normalized LIKE ?
+        )`);
 
         const like = `%${term}%`;
         values.push(like, like, like, like);
@@ -56,43 +60,40 @@ export async function obtenerProductos(req, res) {
       const whereSql = whereParts.join(" AND ");
 
       const [rows] = await pool.query(
-        `SELECT *
-   FROM productos_test
-   WHERE status = 'activo'
-     AND ${whereSql}
-   ORDER BY name ASC
-   LIMIT 200`,
+        `${baseSelect}
+ WHERE image IS NOT NULL AND LENGTH(image) > 0
+   AND ${whereSql}
+ ORDER BY name ASC`,
         values
       );
 
       return res.json({ ok: true, data: rows });
-
-
-      return res.json({ ok: true, data: rows });
     }
 
-    // 🔹 3+ letras → FULLTEXT (relevancia)
+    // 🔹 búsqueda larga → FULLTEXT por relevancia
     const terms = q
       .toLowerCase()
       .split(/\s+/)
       .filter(Boolean);
 
-    // todas las palabras obligatorias: +agua +fast
     const qBoolean = terms.map((t) => `+${t}`).join(" ");
 
     const [rows] = await pool.query(
-      `SELECT *,
-              MATCH(name, description) AGAINST (? IN BOOLEAN MODE) AS score
-       FROM productos_test
-       WHERE status = 'activo'
-         AND MATCH(name, description) AGAINST (? IN BOOLEAN MODE)
-       ORDER BY score DESC, name ASC
-       LIMIT 200`,
+      `
+      SELECT
+        id, name, price, priceOriginal, stock, status,
+        barcode, barcode_normalized, description,
+        (image IS NOT NULL AND LENGTH(image) > 0) AS has_image,
+        MATCH(name, description) AGAINST (? IN BOOLEAN MODE) AS score
+        FROM productos_test
+        WHERE image IS NOT NULL AND LENGTH(image) > 0
+        AND MATCH(name, description) AGAINST (? IN BOOLEAN MODE)
+        ORDER BY score DESC, name ASC
+      `,
       [qBoolean, qBoolean]
     );
 
     return res.json({ ok: true, data: rows });
-
   } catch (err) {
     console.error("Error obtenerProductos:", err);
     return res.status(500).json({
@@ -101,6 +102,8 @@ export async function obtenerProductos(req, res) {
     });
   }
 }
+
+
 
 
 
@@ -327,4 +330,33 @@ export async function ajustarStockProducto(req, res) {
     });
   }
 }
+
+/**
+ * GET /api/productos/:id/image
+ * Devuelve SOLO la imagen (base64) de un producto
+ */
+export async function obtenerProductoImagen(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+    const id = Number(req.params.id);
+
+    if (!id) return res.status(400).json({ ok: false, error: "ID inválido" });
+
+    const [[row]] = await pool.query(
+      `SELECT image FROM productos_test WHERE id = ? LIMIT 1`,
+      [id]
+    );
+
+    const image = row?.image || null;
+
+    return res.json({
+      ok: true,
+      data: { id, image },
+    });
+  } catch (err) {
+    console.error("Error obtenerProductoImagen:", err);
+    return res.status(500).json({ ok: false, error: "Error al obtener imagen" });
+  }
+}
+
 

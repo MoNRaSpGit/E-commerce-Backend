@@ -4,6 +4,7 @@ import {
   obtenerProductosAdmin,
   actualizarProducto,
   ajustarStockProducto,
+  obtenerProductoImagen,
 } from "../controllers/productos.controller.js";
 
 import { requireAuth, requireRole } from "../middlewares/auth.js";
@@ -48,6 +49,9 @@ router.patch(
   requireRole("admin", "operario"),
   ajustarStockProducto
 );
+
+router.get("/:id/image", obtenerProductoImagen);
+
 
 
 

@@ -16,16 +16,19 @@ export async function obtenerProductos(req, res) {
 
     // ✅ sin búsqueda → primeros 200 activos
     if (!q) {
-      const [rows] = await pool.query(
-        `SELECT *
-         FROM productos_test
-         WHERE status = 'activo'
-         ORDER BY name ASC
-         LIMIT 200`
-      );
+  const all = String(process.env.PUBLIC_CATALOG_ALL || "") === "1";
 
-      return res.json({ ok: true, data: rows });
-    }
+  const [rows] = await pool.query(
+    `SELECT *
+     FROM productos_test
+     ${all ? "" : "WHERE status = 'activo'"}
+     ORDER BY name ASC
+     LIMIT 2000`
+  );
+
+  return res.json({ ok: true, data: rows });
+}
+
 
     // 🔹 1–2 letras → LIKE (rápido, sirve para 1 tecla)
     if (q.length <= 8) {

@@ -63,7 +63,7 @@ export async function crearPedido(req, res) {
     // 🔔 PUSH a staff (operario/admin) - funciona aunque tengan la web cerrada
     sendPushToRoles(pool, ["operario", "admin"], {
       type: "pedido_nuevo_staff",
-      title: "Nuevo pedido 📦",
+      title: "Almacen Piloto",
       body: `Pedido #${result.pedido.id} - Total ${result.pedido.total} ${result.pedido.moneda}`,
       pedidoId: result.pedido.id,
       url: "#/operario/pedidos",
@@ -152,8 +152,8 @@ export async function cambiarEstadoPedido(req, res) {
     if (usuarioId && prevEstado !== "listo" && estado === "listo") {
       sendPushToUser(pool, usuarioId, {
         type: "pedido_listo_cliente",
-        title: "Tu pedido está listo ✅",
-        body: `Pedido #${id} listo para retirar`,
+        title: "Almacen Piloto ",
+        body: "Tu pedido está listo para retirar ✅",
         pedidoId: id,
         estado: "listo",
         url: "#/mis-pedidos",

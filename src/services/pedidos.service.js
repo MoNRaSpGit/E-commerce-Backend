@@ -199,7 +199,9 @@ export async function obtenerPedidosDeUsuario(pool, usuarioId) {
     `SELECT id, estado, total, moneda, created_at, updated_at
       FROM eco_pedido
       WHERE usuario_id = ?
-      ORDER BY created_at DESC`,
+      AND archivado = 0
+      ORDER BY created_at DESC
+`,
     [uid]
   );
   return rows;
@@ -217,7 +219,7 @@ export async function obtenerPedidos(pool, { estado }) {
 
 
   const [rows] = await pool.query(
-  `SELECT
+    `SELECT
     p.id,
     p.usuario_id,
     u.email AS usuario_email,
@@ -234,8 +236,8 @@ export async function obtenerPedidos(pool, { estado }) {
   ${where}
   ORDER BY p.created_at DESC
   LIMIT 200`,
-  params
-);
+    params
+  );
 
 
   return rows;

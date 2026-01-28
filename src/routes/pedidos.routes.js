@@ -42,7 +42,9 @@ router.get("/", requireAuth, requireRole("operario", "admin"), listarPedidos);
 router.patch("/:id/estado", requireAuth, requireRole("operario", "admin"), cambiarEstadoPedido);
 router.get("/:id", requireAuth, requireRole("cliente", "operario", "admin"), detallePedido);
 
-router.patch("/:id/archivar", requireAuth, requireRole("operario", "admin"), archivarPedido);
+
+router.patch("/:id/archivar", requireAuth, requireRole("cliente", "operario", "admin"), archivarPedido);
+
 
 
 export default router;

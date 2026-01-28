@@ -152,8 +152,9 @@ export async function cambiarEstadoPedido(req, res) {
     if (usuarioId && prevEstado !== "listo" && estado === "listo") {
       sendPushToUser(pool, usuarioId, {
         type: "pedido_listo_cliente",
-        title: "Almacen Piloto ",
+        title: "Almacen Piloto",
         body: "Tu pedido está listo para retirar ✅",
+        tag: "pedido_listo",
         pedidoId: id,
         estado: "listo",
         url: "#/mis-pedidos",
@@ -201,6 +202,22 @@ export async function archivarPedido(req, res) {
     const id = Number(req.params.id);
 
     if (!id) return res.status(400).json({ ok: false, error: "Pedido inválido" });
+
+    // ✅ cliente: solo puede ocultar (archivar) su propio pedido
+    if (req.user?.rol === "cliente") {
+      const [rows] = await pool.query(
+        `SELECT usuario_id FROM eco_pedido WHERE id = ? LIMIT 1`,
+        [id]
+      );
+
+      const p = rows?.[0];
+      if (!p) return res.status(404).json({ ok: false, error: "Pedido no encontrado" });
+
+      if (Number(p.usuario_id) !== Number(req.user.id)) {
+        return res.status(403).json({ ok: false, error: "Sin permisos" });
+      }
+    }
+
 
     const result = await archivarPedidoService(pool, { pedidoId: id });
 

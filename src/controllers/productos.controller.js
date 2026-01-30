@@ -18,7 +18,7 @@ export async function obtenerProductos(req, res) {
     const baseSelect = `
       SELECT
         id, name, price, priceOriginal, stock, status,
-        barcode, barcode_normalized, description,
+        barcode, barcode_normalized, description,categoria,
         (image IS NOT NULL AND LENGTH(image) > 0) AS has_image
       FROM productos_test
     `;
@@ -27,8 +27,8 @@ export async function obtenerProductos(req, res) {
     if (!q) {
       const [rows] = await pool.query(
         `${baseSelect}
- WHERE image IS NOT NULL AND LENGTH(image) > 0
- ORDER BY name ASC`
+       WHERE image IS NOT NULL AND LENGTH(image) > 0
+          ORDER BY name ASC`
       );
 
       return res.json({ ok: true, data: rows });
@@ -82,7 +82,7 @@ export async function obtenerProductos(req, res) {
       `
       SELECT
         id, name, price, priceOriginal, stock, status,
-        barcode, barcode_normalized, description,
+        barcode, barcode_normalized, description, categoria,
         (image IS NOT NULL AND LENGTH(image) > 0) AS has_image,
         MATCH(name, description) AGAINST (? IN BOOLEAN MODE) AS score
         FROM productos_test
@@ -115,9 +115,36 @@ export async function obtenerProductosAdmin(req, res) {
   try {
     const pool = req.app.locals.pool;
 
-    const [rows] = await pool.query(
-      "SELECT * FROM productos_test WHERE id BETWEEN 95 AND 105 ORDER BY id ASC"
-    );
+    const onlyNoCategoria = String(req.query?.solo_sin_categoria || "") === "1";
+
+    let rows;
+
+    if (onlyNoCategoria) {
+
+      [rows] = await pool.query(`
+  SELECT
+    id,
+    name,
+    price,
+    status,
+    barcode,
+    categoria,
+    subcategoria,
+    stock
+  FROM productos_test
+  WHERE
+    (categoria IS NULL OR TRIM(categoria) = '')
+    AND (barcode IS NOT NULL AND TRIM(barcode) <> '')
+  ORDER BY name ASC
+`);
+
+    } else {
+      [rows] = await pool.query(`
+        SELECT *
+        FROM productos_test
+        ORDER BY name ASC
+      `);
+    }
 
     return res.json({
       ok: true,
@@ -131,6 +158,7 @@ export async function obtenerProductosAdmin(req, res) {
     });
   }
 }
+
 
 /**
  * PATCH /api/productos/:id
@@ -151,6 +179,7 @@ export async function actualizarProducto(req, res) {
       image,
       status, // activo | inactivo
       stock,
+      categoria,
     } = req.body || {};
 
     const fields = [];
@@ -186,6 +215,14 @@ export async function actualizarProducto(req, res) {
       fields.push("status = ?");
       values.push(status);
     }
+
+    if (categoria !== undefined) {
+      const cat = String(categoria).trim();
+      // permitimos null/"" para limpiar categoría
+      fields.push("categoria = ?");
+      values.push(cat ? cat : null);
+    }
+
 
     if (fields.length === 0) {
       return res.status(400).json({
@@ -356,6 +393,121 @@ export async function obtenerProductoImagen(req, res) {
   } catch (err) {
     console.error("Error obtenerProductoImagen:", err);
     return res.status(500).json({ ok: false, error: "Error al obtener imagen" });
+  }
+}
+
+
+/**
+ * PATCH /api/productos/categoria
+ * Body: { categoria: string|null, ids: number[] }
+ * Admin / Operario
+ */
+export async function actualizarCategoriaMasiva(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+
+    const categoriaRaw = req.body?.categoria;
+    const idsRaw = req.body?.ids;
+    const subcategoriaRaw = req.body?.subcategoria;
+
+    // ✅ validar ids
+    if (!Array.isArray(idsRaw) || idsRaw.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "ids inválidos (debe ser un array con al menos 1 elemento)",
+      });
+    }
+
+    const ids = idsRaw
+      .map((x) => Number(x))
+      .filter((n) => Number.isFinite(n) && Number.isInteger(n) && n > 0);
+
+    if (ids.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "ids inválidos (deben ser enteros > 0)",
+      });
+    }
+
+    // ✅ categoria: string o null (permitimos limpiar)
+    let categoria = null;
+    if (categoriaRaw !== null && categoriaRaw !== undefined) {
+      const cat = String(categoriaRaw).trim();
+      categoria = cat ? cat : null;
+    }
+
+    let subcategoria = null;
+    if (subcategoriaRaw !== null && subcategoriaRaw !== undefined) {
+      const sub = String(subcategoriaRaw).trim();
+      subcategoria = sub ? sub : null;
+    }
+
+    // ✅ Reglas: subcategoria obligatoria solo en algunas categorías
+    const requiresSub =
+      categoria === "bebidas" ||
+      categoria === "mascotas" ||
+      categoria === "helados";
+
+    const allowedSubs = {
+      bebidas: new Set(["con_alcohol", "sin_alcohol"]),
+      mascotas: new Set(["gato", "perro"]),
+      helados: new Set(["conaprole", "crufi"]),
+    };
+
+    if (requiresSub && !subcategoria) {
+      return res.status(400).json({
+        ok: false,
+        error: "Subcategoría requerida para esa categoría",
+      });
+    }
+
+    if (requiresSub) {
+      const ok = allowedSubs[categoria]?.has(subcategoria);
+      if (!ok) {
+        return res.status(400).json({
+          ok: false,
+          error: "Subcategoría inválida para esa categoría",
+        });
+      }
+    } else {
+      subcategoria = null; // limpia basura
+    }
+
+
+
+    // ✅ update masivo (placeholders seguros)
+    const placeholders = ids.map(() => "?").join(",");
+    const [r] = await pool.query(
+      `UPDATE productos_test
+   SET categoria = ?, subcategoria = ?
+   WHERE id IN (${placeholders})`,
+      [categoria, subcategoria, ...ids]
+    );
+
+    // Emitimos para staff para que refresquen paneles si están escuchando
+    emitStaff("productos_update", {
+      tipo: "categoria_masiva",
+      categoria,
+      subcategoria,
+      ids,
+      updated: r.affectedRows || 0,
+      at: new Date().toISOString(),
+    });
+
+    return res.json({
+      ok: true,
+      data: {
+        categoria,
+        ids,
+        updated: r.affectedRows || 0,
+      },
+    });
+  } catch (err) {
+    console.error("Error actualizarCategoriaMasiva:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "Error al actualizar categoría (masivo)",
+    });
   }
 }
 

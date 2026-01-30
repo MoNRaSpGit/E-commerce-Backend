@@ -5,6 +5,7 @@ import {
   actualizarProducto,
   ajustarStockProducto,
   obtenerProductoImagen,
+  actualizarCategoriaMasiva,
 } from "../controllers/productos.controller.js";
 
 import { requireAuth, requireRole } from "../middlewares/auth.js";
@@ -27,6 +28,18 @@ router.get(
   requireRole("admin", "operario"),
   obtenerProductosAdmin
 );
+
+/**
+ * Admin / Operario
+ * Setear categoría masiva
+ */
+router.patch(
+  "/categoria",
+  requireAuth,
+  requireRole("admin", "operario"),
+  actualizarCategoriaMasiva
+);
+
 
 /**
  * Admin / Operario

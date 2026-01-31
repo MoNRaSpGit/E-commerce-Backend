@@ -16,12 +16,12 @@ export async function obtenerProductos(req, res) {
 
     // ✅ columnas livianas (NO mandamos image base64 en listados)
     const baseSelect = `
-      SELECT
-        id, name, price, priceOriginal, stock, status,
-        barcode, barcode_normalized, description,categoria,
-        (image IS NOT NULL AND LENGTH(image) > 0) AS has_image
-      FROM productos_test
-    `;
+  SELECT
+    id, name, price, priceOriginal, stock, status,
+    barcode, barcode_normalized, description, categoria, subcategoria,
+    (image IS NOT NULL AND LENGTH(image) > 0) AS has_image
+  FROM productos_test
+`;
 
     // ✅ sin búsqueda → TODOS
     if (!q) {
@@ -80,12 +80,12 @@ export async function obtenerProductos(req, res) {
 
     const [rows] = await pool.query(
       `
-      SELECT
-        id, name, price, priceOriginal, stock, status,
-        barcode, barcode_normalized, description, categoria,
-        (image IS NOT NULL AND LENGTH(image) > 0) AS has_image,
-        MATCH(name, description) AGAINST (? IN BOOLEAN MODE) AS score
-        FROM productos_test
+     SELECT
+  id, name, price, priceOriginal, stock, status,
+  barcode, barcode_normalized, description, categoria, subcategoria,
+  (image IS NOT NULL AND LENGTH(image) > 0) AS has_image,
+  MATCH(name, description) AGAINST (? IN BOOLEAN MODE) AS score
+  FROM productos_test
         WHERE image IS NOT NULL AND LENGTH(image) > 0
         AND MATCH(name, description) AGAINST (? IN BOOLEAN MODE)
         ORDER BY score DESC, name ASC

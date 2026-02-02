@@ -16,32 +16,54 @@ function normalizeItems(items) {
   return clean;
 }
 
+
+function perfNowMs() {
+  return Number(process.hrtime.bigint() / 1000000n); // ms
+}
+function perfLog(tag, t0, extra = "") {
+  const dt = perfNowMs() - t0;
+  console.log(`[PERF] ${tag} ${dt}ms${extra ? " " + extra : ""}`);
+  return perfNowMs();
+}
+
+
 export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, meta }) {
+  const PERF_ID = Math.random().toString(16).slice(2, 8);
+
   const uid = Number(usuarioId);
   if (!uid) return { ok: false, error: "Usuario inválido" };
 
   const cleanItems = normalizeItems(items);
   if (cleanItems.length === 0) return { ok: false, error: "Items inválidos" };
 
+  // ✅ Agrupar cantidades por productoId (evita updates repetidos si el carrito trae duplicados)
+  const aggMap = new Map();
+  for (const it of cleanItems) {
+    aggMap.set(it.productoId, (aggMap.get(it.productoId) || 0) + it.cantidad);
+  }
+  const aggItems = [...aggMap.entries()].map(([productoId, cantidad]) => ({
+    productoId,
+    cantidad,
+  }));
+
   // Traer productos reales desde DB (NO confiar en precios del front)
-  const ids = [...new Set(cleanItems.map((x) => x.productoId))];
+  const ids = aggItems.map((x) => x.productoId);
   const placeholders = ids.map(() => "?").join(",");
 
+  let tSelProductos = perfNowMs();
   const [rows] = await pool.query(
     `SELECT id, name, price, status, stock
       FROM productos_test
       WHERE id IN (${placeholders})`,
     ids
   );
+  perfLog(`(${PERF_ID}) productos SELECT`, tSelProductos, `ids=${ids.length} items=${cleanItems.length}`);
 
   const byId = new Map(rows.map((r) => [Number(r.id), r]));
-
-  const repoInsertados = new Set();
   const repoUpdates = new Set(); // productos que deben disparar reposicion_update
 
-
-  // Validar que existan, estén activos y haya stock
-  for (const it of cleanItems) {
+  // Validar que existan, estén activos y haya stock (sobre aggItems)
+  for (const it of aggItems) {
     const p = byId.get(it.productoId);
     if (!p) return { ok: false, error: `Producto ${it.productoId} no existe` };
     if (p.status !== "activo") return { ok: false, error: `Producto ${it.productoId} no está activo` };
@@ -52,7 +74,7 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
     }
   }
 
-  // Construir items finales con snapshot
+  // Construir items finales con snapshot (mantenemos líneas originales del carrito)
   const finalItems = cleanItems.map((it) => {
     const p = byId.get(it.productoId);
     const precio = Number(p.price) || 0;
@@ -72,60 +94,79 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
   // Transacción
   const conn = await pool.getConnection();
   try {
+    let tBegin = perfNowMs();
+    await conn.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
     await conn.beginTransaction();
-    const repoInsertados = new Set();
+    perfLog(`(${PERF_ID}) BEGIN`, tBegin);
+
+    const tTxTotal = perfNowMs(); // total transacción desde acá
+
     const stockUpdates = [];
 
-    // Descontar stock (atómico por producto)
-    for (const it of cleanItems) {
-      const [u] = await conn.query(
-        `UPDATE productos_test
-     SET stock = stock - ?
-     WHERE id = ? AND stock >= ?`,
-        [it.cantidad, it.productoId, it.cantidad]
-      );
+    // ✅ Descontar stock en 1 solo UPDATE (batch) usando JOIN con tabla derivada
+    const subParts = aggItems.map(() => "SELECT ? AS id, ? AS qty").join(" UNION ALL ");
+    const subParams = [];
+    for (const it of aggItems) subParams.push(it.productoId, it.cantidad);
 
-      if (!u.affectedRows) {
-        // por si cambió el stock entre el SELECT y el UPDATE (protección extra)
-        const p = byId.get(it.productoId);
-        throw new Error(`SIN_STOCK:${p?.name || it.productoId}`);
-      }
+    let tUpd = perfNowMs();
+    const [u] = await conn.query(
+      `UPDATE productos_test p
+       JOIN (${subParts}) x ON x.id = p.id
+       SET p.stock = p.stock - x.qty
+       WHERE p.stock >= x.qty`,
+      subParams
+    );
+    perfLog(`(${PERF_ID}) UPDATE stock batch`, tUpd, `unique=${aggItems.length}`);
 
-
-
-
-      // Leer stock resultante (ya descontado)
-      const [[rowStock]] = await conn.query(
-        `SELECT stock FROM productos_test WHERE id = ?`,
-        [it.productoId]
-      );
-
-      const stockResultante = Number(rowStock?.stock ?? 0);
-      stockUpdates.push({ productoId: it.productoId, stock: stockResultante });
-
-
-      // Si quedó bajo/crítico, registrar evento histórico
-      if (stockResultante <= 3 && !repoInsertados.has(it.productoId)) {
-        repoInsertados.add(it.productoId);
-
-        const nivel = stockResultante === 0 ? "critico" : "bajo";
-
-        await conn.query(
-          `INSERT INTO eco_reposicion_alerta (producto_id, stock_en_evento, nivel)
-           VALUES (?, ?, ?)`,
-          [it.productoId, stockResultante, nivel]
-        );
-        repoUpdates.add(it.productoId);
-      }
-
+    if (u.affectedRows !== aggItems.length) {
+      const first = aggItems[0];
+      const p = byId.get(first?.productoId);
+      throw new Error(`SIN_STOCK:${p?.name || first?.productoId || "producto"}`);
     }
 
+    // ✅ Leer stocks resultantes en 1 solo SELECT
+    const placeholders2 = ids.map(() => "?").join(",");
+    let tSelStock = perfNowMs();
+    const [stockRows] = await conn.query(
+      `SELECT id, stock FROM productos_test WHERE id IN (${placeholders2})`,
+      ids
+    );
+    perfLog(`(${PERF_ID}) SELECT stocks post-update`, tSelStock, `ids=${ids.length}`);
+
+    const stockById = new Map(stockRows.map((r) => [Number(r.id), Number(r.stock ?? 0)]));
+
+    // armar stockUpdates + detectar reposición
+    const repoValues = [];
+    for (const it of aggItems) {
+      const stockResultante = stockById.get(it.productoId) ?? 0;
+      stockUpdates.push({ productoId: it.productoId, stock: stockResultante });
+
+      if (stockResultante <= 3) {
+        const nivel = stockResultante === 0 ? "critico" : "bajo";
+        repoValues.push([it.productoId, stockResultante, nivel]);
+        repoUpdates.add(it.productoId);
+      }
+    }
+
+    // ✅ Bulk insert reposición (solo si hubo)
+    if (repoValues.length) {
+      let tRepo = perfNowMs();
+      await conn.query(
+        `INSERT INTO eco_reposicion_alerta (producto_id, stock_en_evento, nivel)
+         VALUES ?`,
+        [repoValues]
+      );
+      perfLog(`(${PERF_ID}) INSERT reposicion bulk`, tRepo, `rows=${repoValues.length}`);
+    }
+
+    // INSERT pedido
+    let tInsPedido = perfNowMs();
     const [insPedido] = await conn.query(
       `INSERT INTO eco_pedido
           (usuario_id, estado, total, moneda,
-          nombre_receptor, telefono_receptor, direccion_entrega, notas,
-          creado_por_ip, creado_por_user_agent)
-        VALUES (?, 'pendiente', ?, 'UYU', ?, ?, ?, ?, ?, ?)`,
+           nombre_receptor, telefono_receptor, direccion_entrega, notas,
+           creado_por_ip, creado_por_user_agent)
+       VALUES (?, 'pendiente', ?, 'UYU', ?, ?, ?, ?, ?, ?)`,
       [
         uid,
         total,
@@ -137,6 +178,7 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
         meta?.userAgent || null,
       ]
     );
+    perfLog(`(${PERF_ID}) insert pedido`, tInsPedido);
 
     const pedidoId = insPedido.insertId;
 
@@ -150,23 +192,24 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
       x.subtotal,
     ]);
 
+    let tInsItems = perfNowMs();
     await conn.query(
       `INSERT INTO eco_pedido_item
           (pedido_id, producto_id, nombre_snapshot, precio_unitario_snapshot, cantidad, subtotal)
-        VALUES ?`,
+       VALUES ?`,
       [values]
     );
+    perfLog(`(${PERF_ID}) bulk insert items`, tInsItems, `count=${values.length}`);
 
+    // COMMIT + totales
+    let tCommit = perfNowMs();
     await conn.commit();
+    perfLog(`(${PERF_ID}) COMMIT`, tCommit);
+    perfLog(`(${PERF_ID}) TX TOTAL`, tTxTotal);
 
-    for (const u of stockUpdates) {
-      emitStock("stock_update", u);
-    }
-
-    for (const productoId of repoUpdates) {
-      emitStaff("reposicion_update", { productoId });
-    }
-
+    // post-commit SSE
+    for (const su of stockUpdates) emitStock("stock_update", su);
+    for (const productoId of repoUpdates) emitStaff("reposicion_update", { productoId });
 
     return {
       ok: true,
@@ -187,8 +230,7 @@ export async function crearPedidoDesdeItems(pool, { usuarioId, items, entrega, m
     }
 
     throw err;
-  }
-  finally {
+  } finally {
     conn.release();
   }
 }

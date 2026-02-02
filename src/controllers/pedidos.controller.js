@@ -152,6 +152,7 @@ export async function cambiarEstadoPedido(req, res) {
     if (usuarioId && prevEstado !== "listo" && estado === "listo") {
       sendPushToUser(pool, usuarioId, {
         type: "pedido_listo_cliente",
+        targetUserId: usuarioId, // ✅ clave: a quién va dirigido
         title: "Almacen Piloto",
         body: "Tu pedido está listo para retirar ✅",
         tag: "pedido_listo",

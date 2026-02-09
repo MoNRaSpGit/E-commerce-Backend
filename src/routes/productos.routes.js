@@ -6,6 +6,7 @@ import {
   ajustarStockProducto,
   obtenerProductoImagen,
   actualizarCategoriaMasiva,
+   obtenerProductoPorBarcode,
 } from "../controllers/productos.controller.js";
 
 import { requireAuth, requireRole } from "../middlewares/auth.js";
@@ -17,6 +18,19 @@ const router = Router();
  * Lista simple (la que ya usás en /productos)
  */
 router.get("/", obtenerProductos);
+
+/**
+ * Operario / Admin
+ * Buscar producto por código de barras (exact match)
+ */
+router.get(
+  "/barcode/:barcode",
+  requireAuth,
+  requireRole("admin", "operario"),
+  obtenerProductoPorBarcode
+);
+
+
 
 /**
  * Admin / Operario

@@ -512,3 +512,43 @@ export async function actualizarCategoriaMasiva(req, res) {
 }
 
 
+/**
+ * GET /api/productos/barcode/:barcode
+ * Admin / Operario
+ * Devuelve 1 producto por barcode exacto (sin image base64)
+ */
+export async function obtenerProductoPorBarcode(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+    const raw = String(req.params.barcode || "").trim();
+
+    if (!raw) {
+      return res.status(400).json({ ok: false, error: "Barcode requerido" });
+    }
+
+    // ✅ búsqueda exacta (usa UNIQUE/INDEX del barcode)
+    const [[row]] = await pool.query(
+      `
+      SELECT
+        id, name, price, priceOriginal, stock, status,
+        barcode, barcode_normalized, description, categoria, subcategoria,
+        (image IS NOT NULL AND LENGTH(image) > 0) AS has_image
+      FROM productos_test
+      WHERE barcode = ?
+      LIMIT 1
+      `,
+      [raw]
+    );
+
+    if (!row) {
+      return res.status(404).json({ ok: false, error: "Producto no encontrado" });
+    }
+
+    return res.json({ ok: true, data: row });
+  } catch (err) {
+    console.error("Error obtenerProductoPorBarcode:", err);
+    return res.status(500).json({ ok: false, error: "Error al buscar producto" });
+  }
+}
+
+

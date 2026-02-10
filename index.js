@@ -12,6 +12,7 @@ import stockRoutes from "./src/routes/stock.routes.js";
 import analyticsRoutes from "./src/routes/analytics.routes.js";
 import pushRoutes from "./src/routes/push.routes.js";
 
+import actualizacionRoutes from "./src/routes/actualizacion.routes.js";
 
 
 
@@ -55,6 +56,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/pedidos", pedidosRoutes);
 app.use("/api/reposicion", reposicionRoutes);
 app.use("/api/push", pushRoutes);
+app.use("/api/actualizacion", actualizacionRoutes);
+
 
 
 // Rutas protegidas (solo para pruebas de roles)

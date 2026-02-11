@@ -551,4 +551,146 @@ export async function obtenerProductoPorBarcode(req, res) {
   }
 }
 
+/**
+ * POST /api/productos
+ * Operario / Admin
+ * Body: { barcode, name, price }
+ * Crea el producto si no existe. Si ya existe, devuelve 409.
+ */
+export async function crearProductoRapido(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+
+    const barcode = String(req.body?.barcode || "").trim();
+    const name = String(req.body?.name || "").trim();
+    const priceRaw = req.body?.price;
+
+    if (!barcode) {
+      return res.status(400).json({ ok: false, error: "barcode requerido" });
+    }
+    if (name.length < 2) {
+      return res.status(400).json({ ok: false, error: "Nombre requerido" });
+    }
+
+    const price = Number(priceRaw);
+    if (!Number.isFinite(price) || price < 0) {
+      return res.status(400).json({ ok: false, error: "Precio inválido" });
+    }
+
+    // Si ya existe, 409 (front puede reintentar GET)
+    const [[exists]] = await pool.query(
+      `SELECT id FROM productos_test WHERE barcode = ? LIMIT 1`,
+      [barcode]
+    );
+    if (exists) {
+      return res.status(409).json({ ok: false, error: "Ese barcode ya existe" });
+    }
+
+    // Insert mínimo (stock default ya lo pone la tabla)
+    const [r] = await pool.query(
+      `
+      INSERT INTO productos_test (name, price, barcode, status)
+      VALUES (?, ?, ?, 'activo')
+      `,
+      [name, price, barcode]
+    );
+
+    const newId = r.insertId;
+
+    // devolver producto “tipo scan” (sin image)
+    const [[row]] = await pool.query(
+      `
+      SELECT
+        id, name, price, priceOriginal, stock, status,
+        barcode, barcode_normalized, description, categoria, subcategoria,
+        (image IS NOT NULL AND LENGTH(image) > 0) AS has_image
+      FROM productos_test
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [newId]
+    );
+
+    // avisar a staff si querés refrescar paneles
+    emitStaff("productos_update", {
+      tipo: "alta_rapida",
+      productoId: newId,
+      barcode,
+      at: new Date().toISOString(),
+    });
+
+    return res.status(201).json({ ok: true, data: row });
+  } catch (err) {
+    console.error("crearProductoRapido error:", err);
+    return res.status(500).json({ ok: false, error: "Error al crear producto" });
+  }
+}
+
+/**
+ * POST /api/productos/barcode/:barcode
+ * Admin / Operario
+ * Crea un producto mínimo (name + price) y guarda barcode.
+ */
+export async function crearProductoPorBarcode(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+
+    const barcode = String(req.params.barcode || "").trim();
+    if (!barcode) return res.status(400).json({ ok: false, error: "Barcode requerido" });
+
+    const nameRaw = req.body?.name;
+    const priceRaw = req.body?.price;
+
+    const name = String(nameRaw || "").trim();
+    const price = Number(priceRaw);
+
+    if (name.length < 2) {
+      return res.status(400).json({ ok: false, error: "Nombre requerido" });
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      return res.status(400).json({ ok: false, error: "Precio inválido" });
+    }
+
+    // Si ya existe, devolvemos 409 (para que el front lo trate prolijo)
+    const [[exists]] = await pool.query(
+      `SELECT id FROM productos_test WHERE barcode = ? LIMIT 1`,
+      [barcode]
+    );
+    if (exists) {
+      return res.status(409).json({ ok: false, error: "Ese código ya existe" });
+    }
+
+    // Insert mínimo. (stock default 10 ya está en tabla)
+    const [r] = await pool.query(
+      `
+      INSERT INTO productos_test (name, price, barcode, status)
+      VALUES (?, ?, ?, 'activo')
+      `,
+      [name, price, barcode]
+    );
+
+    const id = r.insertId;
+
+    const [[row]] = await pool.query(
+      `
+      SELECT
+        id, name, price, priceOriginal, stock, status,
+        barcode, barcode_normalized, description, categoria, subcategoria,
+        (image IS NOT NULL AND LENGTH(image) > 0) AS has_image
+      FROM productos_test
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    return res.status(201).json({ ok: true, data: row });
+  } catch (err) {
+    console.error("crearProductoPorBarcode error:", err);
+    return res.status(500).json({ ok: false, error: "Error al crear producto" });
+  }
+}
+
+
+
 

@@ -6,7 +6,9 @@ import {
   ajustarStockProducto,
   obtenerProductoImagen,
   actualizarCategoriaMasiva,
-   obtenerProductoPorBarcode,
+  obtenerProductoPorBarcode,
+  crearProductoPorBarcode,
+  crearProductoRapido,
 } from "../controllers/productos.controller.js";
 
 import { requireAuth, requireRole } from "../middlewares/auth.js";
@@ -21,6 +23,18 @@ router.get("/", obtenerProductos);
 
 /**
  * Operario / Admin
+ * Alta rápida cuando el barcode no existe
+ */
+router.post(
+  "/",
+  requireAuth,
+  requireRole("admin", "operario"),
+  crearProductoRapido
+);
+
+
+/**
+ * Operario / Admin
  * Buscar producto por código de barras (exact match)
  */
 router.get(
@@ -29,6 +43,18 @@ router.get(
   requireRole("admin", "operario"),
   obtenerProductoPorBarcode
 );
+
+/**
+ * Operario / Admin
+ * Crear producto por barcode (si no existe)
+ */
+router.post(
+  "/barcode/:barcode",
+  requireAuth,
+  requireRole("admin", "operario"),
+  crearProductoPorBarcode
+);
+
 
 
 

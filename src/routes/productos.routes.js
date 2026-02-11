@@ -9,6 +9,7 @@ import {
   obtenerProductoPorBarcode,
   crearProductoPorBarcode,
   crearProductoRapido,
+  eliminarProducto,
 } from "../controllers/productos.controller.js";
 
 import { requireAuth, requireRole } from "../middlewares/auth.js";
@@ -102,6 +103,19 @@ router.patch(
   requireRole("admin", "operario"),
   ajustarStockProducto
 );
+
+
+/**
+ * Admin / Operario
+ * Eliminar producto
+ */
+router.delete(
+  "/:id",
+  requireAuth,
+  requireRole("admin", "operario"),
+  eliminarProducto
+);
+
 
 router.get("/:id/image", obtenerProductoImagen);
 

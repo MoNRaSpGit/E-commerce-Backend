@@ -691,6 +691,66 @@ export async function crearProductoPorBarcode(req, res) {
   }
 }
 
+/**
+ * DELETE /api/productos/:id
+ * Admin / Operario
+ */
+export async function eliminarProducto(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+    const id = Number(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({ ok: false, error: "ID inválido" });
+    }
+
+    const [r] = await pool.query(
+      `DELETE FROM productos_test WHERE id = ?`,
+      [id]
+    );
+
+    if (!r.affectedRows) {
+      return res.status(404).json({ ok: false, error: "Producto no encontrado" });
+    }
+
+    emitStaff("productos_update", {
+      tipo: "delete",
+      productoId: id,
+      at: new Date().toISOString(),
+    });
+
+    return res.json({ ok: true, id });
+  } catch (err) {
+    // ✅ mysql2 puede tirar WARN_DATA_TRUNCATED como error aunque el DELETE haya ocurrido
+    if (err?.code === "WARN_DATA_TRUNCATED") {
+      try {
+        const pool = req.app.locals.pool;
+        const id = Number(req.params.id);
+
+        // si el producto ya no existe, consideramos el delete OK
+        const [[stillThere]] = await pool.query(
+          `SELECT id FROM productos_test WHERE id = ? LIMIT 1`,
+          [id]
+        );
+
+        if (!stillThere) {
+          return res.json({ ok: true, id });
+        }
+      } catch {
+        // si falla este check, seguimos al error normal
+      }
+    }
+
+    console.error("Error eliminarProducto:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "Error al eliminar producto",
+    });
+  }
+
+}
+
+
 
 
 

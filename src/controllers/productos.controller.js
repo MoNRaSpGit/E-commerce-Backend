@@ -118,40 +118,51 @@ export async function obtenerProductosAdmin(req, res) {
     const onlyNoCategoria = String(req.query?.solo_sin_categoria || "") === "1";
 
     const onlyConBarcode = String(req.query?.solo_con_barcode || "") === "1";
-    const priceEqRaw = req.query?.price_eq;
-    const priceEq = priceEqRaw !== undefined && priceEqRaw !== null && String(priceEqRaw).trim() !== ""
-      ? Number(priceEqRaw)
-      : null;
 
+    const priceEqRaw = req.query?.price_eq;
+    const priceEq =
+      priceEqRaw !== undefined &&
+        priceEqRaw !== null &&
+        String(priceEqRaw).trim() !== ""
+        ? Number(priceEqRaw)
+        : null;
 
     let rows;
 
+    // ✅ 1) Solo sin categoría (y barcode obligatorio como ya venías haciendo)
     if (onlyNoCategoria) {
       [rows] = await pool.query(`
-    SELECT
-      id,
-      name,
-      price,
-      status,
-      barcode,
-      categoria,
-      subcategoria,
-      stock
-    FROM productos_test
-    WHERE
-      (categoria IS NULL OR TRIM(categoria) = '')
-      AND (barcode IS NOT NULL AND TRIM(barcode) <> '')
-    ORDER BY name ASC
-  `);
+        SELECT
+          id,
+          name,
+          price,
+          status,
+          barcode,
+          categoria,
+          subcategoria,
+          stock,
+          CASE
+            WHEN image IS NULL OR TRIM(image) = '' THEN 0
+            ELSE 1
+          END AS has_image
+        FROM productos_test
+        WHERE
+          (categoria IS NULL OR TRIM(categoria) = '')
+          AND (barcode IS NOT NULL AND TRIM(barcode) <> '')
+        ORDER BY name ASC
+      `);
+
+      // ✅ 2) Barcode obligatorio + filtro opcional por precio exacto (acá entra el 999)
     } else if (onlyConBarcode || priceEq !== null) {
-      // ✅ Lista operativa: barcode obligatorio + filtro opcional por precio exacto
       const whereParts = [];
       const values = [];
 
+      // Si te pidieron solo_con_barcode=1, obligamos barcode
       if (onlyConBarcode) {
         whereParts.push(`(barcode IS NOT NULL AND TRIM(barcode) <> '')`);
       }
 
+      // Si te pidieron price_eq, lo aplicamos
       if (priceEq !== null) {
         if (!Number.isFinite(priceEq) || priceEq < 0) {
           return res.status(400).json({ ok: false, error: "price_eq inválido" });
@@ -164,21 +175,34 @@ export async function obtenerProductosAdmin(req, res) {
 
       [rows] = await pool.query(
         `
-    SELECT id, name, price, barcode, status, stock
-    FROM productos_test
-    ${whereSql}
-    ORDER BY name ASC
-    `,
+          SELECT
+            id,
+            name,
+            price,
+            status,
+            barcode,
+            categoria,
+            subcategoria,
+            stock,
+            CASE
+              WHEN image IS NULL OR TRIM(image) = '' THEN 0
+              ELSE 1
+            END AS has_image
+          FROM productos_test
+          ${whereSql}
+          ORDER BY name ASC
+        `,
         values
       );
+
+      // ✅ 3) Default: todo
     } else {
       [rows] = await pool.query(`
-    SELECT *
-    FROM productos_test
-    ORDER BY name ASC
-  `);
+        SELECT *
+        FROM productos_test
+        ORDER BY name ASC
+      `);
     }
-
 
     return res.json({
       ok: true,
@@ -192,6 +216,7 @@ export async function obtenerProductosAdmin(req, res) {
     });
   }
 }
+
 
 
 /**
@@ -411,24 +436,43 @@ export async function obtenerProductoImagen(req, res) {
     const pool = req.app.locals.pool;
     const id = Number(req.params.id);
 
-    if (!id) return res.status(400).json({ ok: false, error: "ID inválido" });
-
-    const [[row]] = await pool.query(
+    const [rows] = await pool.query(
       `SELECT image FROM productos_test WHERE id = ? LIMIT 1`,
       [id]
     );
 
-    const image = row?.image || null;
+    const image = rows?.[0]?.image;
 
-    return res.json({
-      ok: true,
-      data: { id, image },
-    });
+    if (!image || String(image).trim() === "") {
+      return res.status(404).send("no-image");
+    }
+
+    // image viene como: data:image/jpeg;base64,AAAA...
+    const s = String(image);
+    const m = s.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/);
+
+    if (!m) {
+      // si por algún motivo no vino como dataURL, devolvemos tal cual
+      // (pero lo normal en tu caso es dataURL)
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Cache-Control", "no-store");
+      return res.send(s);
+    }
+
+    const mime = m[1];
+    const b64 = m[2];
+
+    const buf = Buffer.from(b64, "base64");
+
+    res.setHeader("Content-Type", mime);
+    res.setHeader("Cache-Control", "no-store"); // clave para que no cachee
+    return res.send(buf);
   } catch (err) {
     console.error("Error obtenerProductoImagen:", err);
-    return res.status(500).json({ ok: false, error: "Error al obtener imagen" });
+    return res.status(500).send("error");
   }
 }
+
 
 
 /**
@@ -783,6 +827,41 @@ export async function eliminarProducto(req, res) {
   }
 
 }
+
+export async function actualizarProductoImagen(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+    const id = Number(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({ ok: false, error: "ID inválido" });
+    }
+
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ ok: false, error: "Falta archivo 'image'" });
+    }
+
+    if (!file.mimetype?.startsWith("image/")) {
+      return res.status(400).json({ ok: false, error: "Archivo inválido (solo imágenes)" });
+    }
+
+    // Guardamos como dataURL base64 (simple y rápido)
+    const base64 = file.buffer.toString("base64");
+    const dataUrl = `data:${file.mimetype};base64,${base64}`;
+
+    await pool.query(
+      `UPDATE productos_test SET image = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [dataUrl, id]
+    );
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("Error actualizarProductoImagen:", err);
+    return res.status(500).json({ ok: false, error: "Error al subir imagen" });
+  }
+}
+
 
 
 

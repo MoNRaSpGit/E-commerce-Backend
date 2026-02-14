@@ -10,9 +10,17 @@ import {
   crearProductoPorBarcode,
   crearProductoRapido,
   eliminarProducto,
+  actualizarProductoImagen,
 } from "../controllers/productos.controller.js";
 
 import { requireAuth, requireRole } from "../middlewares/auth.js";
+import multer from "multer";
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+});
+
 
 const router = Router();
 
@@ -114,6 +122,19 @@ router.delete(
   requireAuth,
   requireRole("admin", "operario"),
   eliminarProducto
+);
+
+
+/**
+ * Admin / Operario
+ * Subir imagen producto (multipart/form-data)
+ */
+router.put(
+  "/:id/image",
+  requireAuth,
+  requireRole("admin", "operario"),
+  upload.single("image"),
+  actualizarProductoImagen
 );
 
 

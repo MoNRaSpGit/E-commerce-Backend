@@ -117,34 +117,68 @@ export async function obtenerProductosAdmin(req, res) {
 
     const onlyNoCategoria = String(req.query?.solo_sin_categoria || "") === "1";
 
+    const onlyConBarcode = String(req.query?.solo_con_barcode || "") === "1";
+    const priceEqRaw = req.query?.price_eq;
+    const priceEq = priceEqRaw !== undefined && priceEqRaw !== null && String(priceEqRaw).trim() !== ""
+      ? Number(priceEqRaw)
+      : null;
+
+
     let rows;
 
     if (onlyNoCategoria) {
-
       [rows] = await pool.query(`
-  SELECT
-    id,
-    name,
-    price,
-    status,
-    barcode,
-    categoria,
-    subcategoria,
-    stock
-  FROM productos_test
-  WHERE
-    (categoria IS NULL OR TRIM(categoria) = '')
-    AND (barcode IS NOT NULL AND TRIM(barcode) <> '')
-  ORDER BY name ASC
-`);
+    SELECT
+      id,
+      name,
+      price,
+      status,
+      barcode,
+      categoria,
+      subcategoria,
+      stock
+    FROM productos_test
+    WHERE
+      (categoria IS NULL OR TRIM(categoria) = '')
+      AND (barcode IS NOT NULL AND TRIM(barcode) <> '')
+    ORDER BY name ASC
+  `);
+    } else if (onlyConBarcode || priceEq !== null) {
+      // ✅ Lista operativa: barcode obligatorio + filtro opcional por precio exacto
+      const whereParts = [];
+      const values = [];
 
+      if (onlyConBarcode) {
+        whereParts.push(`(barcode IS NOT NULL AND TRIM(barcode) <> '')`);
+      }
+
+      if (priceEq !== null) {
+        if (!Number.isFinite(priceEq) || priceEq < 0) {
+          return res.status(400).json({ ok: false, error: "price_eq inválido" });
+        }
+        whereParts.push(`price = ?`);
+        values.push(priceEq);
+      }
+
+      const whereSql = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
+
+      [rows] = await pool.query(
+        `
+    SELECT id, name, price, barcode, status, stock
+    FROM productos_test
+    ${whereSql}
+    ORDER BY name ASC
+    `,
+        values
+      );
     } else {
       [rows] = await pool.query(`
-        SELECT *
-        FROM productos_test
-        ORDER BY name ASC
-      `);
+    SELECT *
+    FROM productos_test
+    ORDER BY name ASC
+  `);
     }
+
 
     return res.json({
       ok: true,

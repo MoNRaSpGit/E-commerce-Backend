@@ -13,6 +13,8 @@ import analyticsRoutes from "./src/routes/analytics.routes.js";
 import pushRoutes from "./src/routes/push.routes.js";
 
 import actualizacionRoutes from "./src/routes/actualizacion.routes.js";
+import op999Routes from "./src/routes/op999.routes.js";
+
 
 
 
@@ -57,6 +59,8 @@ app.use("/api/pedidos", pedidosRoutes);
 app.use("/api/reposicion", reposicionRoutes);
 app.use("/api/push", pushRoutes);
 app.use("/api/actualizacion", actualizacionRoutes);
+app.use("/api/op999", op999Routes);
+
 
 
 

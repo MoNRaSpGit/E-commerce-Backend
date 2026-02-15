@@ -27,7 +27,8 @@ export async function obtenerProductos(req, res) {
     if (!q) {
       const [rows] = await pool.query(
         `${baseSelect}
-       WHERE image IS NOT NULL AND LENGTH(image) > 0
+       WHERE status = 'activo'
+        AND image IS NOT NULL AND LENGTH(image) > 0
           ORDER BY name ASC`
       );
 
@@ -61,8 +62,9 @@ export async function obtenerProductos(req, res) {
 
       const [rows] = await pool.query(
         `${baseSelect}
- WHERE image IS NOT NULL AND LENGTH(image) > 0
-   AND ${whereSql}
+ WHERE status = 'activo'
+  AND image IS NOT NULL AND LENGTH(image) > 0
+  AND ${whereSql}
  ORDER BY name ASC`,
         values
       );
@@ -86,8 +88,9 @@ export async function obtenerProductos(req, res) {
   (image IS NOT NULL AND LENGTH(image) > 0) AS has_image,
   MATCH(name, description) AGAINST (? IN BOOLEAN MODE) AS score
   FROM productos_test
-        WHERE image IS NOT NULL AND LENGTH(image) > 0
-        AND MATCH(name, description) AGAINST (? IN BOOLEAN MODE)
+        WHERE status = 'activo'
+  AND image IS NOT NULL AND LENGTH(image) > 0
+  AND MATCH(name, description) AGAINST (? IN BOOLEAN MODE)
         ORDER BY score DESC, name ASC
       `,
       [qBoolean, qBoolean]

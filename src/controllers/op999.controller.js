@@ -30,15 +30,24 @@ export async function op999List(req, res) {
     const where = [];
     const values = [];
 
+    // siempre respetamos barcode si viene el flag
     if (soloConBarcode) {
       where.push("(barcode IS NOT NULL AND TRIM(barcode) <> '')");
     }
+
+    // Nuevo: si viene price_eq, traemos (price = price_eq) OR (sin imagen)
     if (priceEq !== null && Number.isFinite(priceEq)) {
-      where.push("price = ?");
+      where.push(`(
+  price = ?
+  OR status = 'pendiente'
+  OR image IS NULL
+  OR TRIM(image) = ''
+)`);
       values.push(priceEq);
     }
 
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
 
     const [rows] = await pool.query(
       `

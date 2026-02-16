@@ -27,10 +27,13 @@ export async function obtenerProductos(req, res) {
     if (!q) {
       const [rows] = await pool.query(
         `${baseSelect}
-       WHERE status = 'activo'
-        AND image IS NOT NULL AND LENGTH(image) > 0
-          ORDER BY name ASC`
+   WHERE status = 'activo'
+     AND barcode IS NOT NULL AND TRIM(barcode) <> ''
+     AND categoria IS NOT NULL AND TRIM(categoria) <> ''
+     AND price IS NOT NULL AND price NOT IN (0, 999)
+   ORDER BY name ASC`
       );
+
 
       return res.json({ ok: true, data: rows });
     }
@@ -63,11 +66,14 @@ export async function obtenerProductos(req, res) {
       const [rows] = await pool.query(
         `${baseSelect}
  WHERE status = 'activo'
-  AND image IS NOT NULL AND LENGTH(image) > 0
-  AND ${whereSql}
+   AND barcode IS NOT NULL AND TRIM(barcode) <> ''
+   AND categoria IS NOT NULL AND TRIM(categoria) <> ''
+   AND price IS NOT NULL AND price NOT IN (0, 999)
+   AND ${whereSql}
  ORDER BY name ASC`,
         values
       );
+
 
       return res.json({ ok: true, data: rows });
     }
@@ -89,8 +95,11 @@ export async function obtenerProductos(req, res) {
   MATCH(name, description) AGAINST (? IN BOOLEAN MODE) AS score
   FROM productos_test
         WHERE status = 'activo'
-  AND image IS NOT NULL AND LENGTH(image) > 0
+  AND barcode IS NOT NULL AND TRIM(barcode) <> ''
+  AND categoria IS NOT NULL AND TRIM(categoria) <> ''
+  AND price IS NOT NULL AND price NOT IN (0, 999)
   AND MATCH(name, description) AGAINST (? IN BOOLEAN MODE)
+
         ORDER BY score DESC, name ASC
       `,
       [qBoolean, qBoolean]

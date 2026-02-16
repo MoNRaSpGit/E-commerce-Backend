@@ -117,7 +117,7 @@ export async function op999Update(req, res) {
       return res.status(400).json({ ok: false, error: "ID inválido" });
     }
 
-    const { name, price, image } = req.body || {};
+    const { name, price, image, status } = req.body || {};
 
     const fields = [];
     const values = [];
@@ -135,6 +135,16 @@ export async function op999Update(req, res) {
       fields.push("price = ?");
       values.push(p);
     }
+
+    if (status !== undefined) {
+      const s = String(status || "").trim();
+      if (s !== "activo" && s !== "pendiente") {
+        return res.status(400).json({ ok: false, error: "Status inválido" });
+      }
+      fields.push("status = ?");
+      values.push(s);
+    }
+
 
     if (image !== undefined) {
       // "" => borrar

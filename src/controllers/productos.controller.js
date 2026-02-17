@@ -31,7 +31,7 @@ export async function obtenerProductos(req, res) {
      AND barcode IS NOT NULL AND TRIM(barcode) <> ''
      AND categoria IS NOT NULL AND TRIM(categoria) <> ''
      AND price IS NOT NULL AND price NOT IN (0, 999)
-   ORDER BY name ASC`
+   ORDER BY has_image DESC, name ASC`
       );
 
 
@@ -70,7 +70,7 @@ export async function obtenerProductos(req, res) {
    AND categoria IS NOT NULL AND TRIM(categoria) <> ''
    AND price IS NOT NULL AND price NOT IN (0, 999)
    AND ${whereSql}
- ORDER BY name ASC`,
+ ORDER BY has_image DESC, name ASC`,
         values
       );
 
@@ -100,7 +100,7 @@ export async function obtenerProductos(req, res) {
   AND price IS NOT NULL AND price NOT IN (0, 999)
   AND MATCH(name, description) AGAINST (? IN BOOLEAN MODE)
 
-        ORDER BY score DESC, name ASC
+        ORDER BY has_image DESC, score DESC, name ASC
       `,
       [qBoolean, qBoolean]
     );
@@ -147,14 +147,14 @@ export async function obtenerProductosAdmin(req, res) {
   WHERE
     (categoria IS NULL OR TRIM(categoria) = '')
     AND (barcode IS NOT NULL AND TRIM(barcode) <> '')
-  ORDER BY name ASC
+  ORDER BY has_image DESC, name ASC
 `);
 
     } else {
       [rows] = await pool.query(`
         SELECT *
         FROM productos_test
-        ORDER BY name ASC
+        ORDER BY has_image DESC, name ASC
       `);
     }
 

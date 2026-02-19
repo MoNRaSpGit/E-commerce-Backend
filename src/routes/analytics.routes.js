@@ -5,8 +5,10 @@ import {
   topProducts,
   summary,
   operarioStatusPublic,
+  operarioStatusStream,
   setOperarioStatus,
 } from "../controllers/analytics.controller.js";
+
 
 import { requireAuth, requireRole } from "../middlewares/auth.js";
 
@@ -15,6 +17,9 @@ const router = Router();
 
 // ✅ Público (cliente): semáforo operario
 router.get("/operario-status", operarioStatusPublic);
+
+
+router.get("/operario-status/stream", operarioStatusStream);
 
 // ✅ Operario/Admin: setea activo/inactivo
 router.patch(

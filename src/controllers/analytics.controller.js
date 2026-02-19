@@ -1,9 +1,12 @@
 // backend/src/controllers/analytics.controller.js
 
+import { getTopProducts, getSummary } from "../services/analytics.service.js";
 import {
-  getTopProducts,
-  getSummary,
-} from "../services/analytics.service.js";
+  addOperarioStatusClient,
+  removeOperarioStatusClient,
+  emitOperarioStatus,
+} from "../realtime/operarioStatusHub.js";
+
 
 export async function topProducts(req, res) {
   try {
@@ -53,6 +56,60 @@ export async function summary(req, res) {
 }
 
 
+/**
+ * GET /api/analytics/operario-status/stream
+ * Público: SSE stream de estado operario (real-time)
+ */
+export async function operarioStatusStream(req, res) {
+  try {
+    const pool = req.app.locals.pool;
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    // si estás detrás de proxy (Render), ayuda a que salga al toque
+    res.flushHeaders?.();
+
+    // 1) mandar estado inicial
+    const [rows] = await pool.query(
+      `SELECT activo, updated_at FROM eco_operario_estado WHERE id = 1 LIMIT 1`
+    );
+    const row = rows?.[0];
+
+    const initialPayload = {
+      activo: row ? !!row.activo : false,
+      updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : null,
+    };
+
+    res.write(`event: operario_status\ndata: ${JSON.stringify(initialPayload)}\n\n`);
+
+    // 2) registrar cliente
+    addOperarioStatusClient(res);
+
+    // 3) keep-alive ping (evita cortes silenciosos)
+    const ping = setInterval(() => {
+      try {
+        res.write(`event: ping\ndata: {}\n\n`);
+      } catch { }
+    }, 25000);
+
+    // 4) cleanup
+    req.on("close", () => {
+      clearInterval(ping);
+      removeOperarioStatusClient(res);
+      try {
+        res.end();
+      } catch { }
+    });
+  } catch (err) {
+    console.error("operarioStatusStream error:", err);
+    return res.status(500).end();
+  }
+}
+
+
+
 // ✅ Estado "Activo/Inactivo" del operario (semaforito)
 
 /**
@@ -69,6 +126,13 @@ export async function operarioStatusPublic(req, res) {
 
     const row = rows?.[0];
     const activo = row ? !!row.activo : false;
+
+    // ✅ emitir a todos (real-time)
+    /* emitOperarioStatus("operario_status", {
+       activo: !!row.activo,
+       updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : null,
+     });*/
+
 
     return res.json({
       ok: true,
@@ -110,6 +174,13 @@ export async function setOperarioStatus(req, res) {
     );
 
     const row = rows?.[0];
+
+    emitOperarioStatus("operario_status", {
+      activo: row ? !!row.activo : false,
+      updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : null,
+    });
+
+
 
     return res.json({
       ok: true,

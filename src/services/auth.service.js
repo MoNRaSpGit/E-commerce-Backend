@@ -142,6 +142,19 @@ export async function refreshAccessToken(pool, refreshToken) {
     return { ok: false, error: "Sesión expirada" };
   }
 
+  
+
+  // ✅ Sliding session: si refresca, extendemos expiración
+  const refreshDays = Number(process.env.REFRESH_TOKEN_TTL_DAYS || 15);
+  const newExpiraAt = new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000);
+
+  await pool.query(
+    `UPDATE eco_sesion
+     SET expira_at = ?
+     WHERE id = ? AND revocado_at IS NULL`,
+    [newExpiraAt, sesion.id]
+  );
+
   // 3) emitir nuevo access token
   const accessToken = jwt.sign(
     {

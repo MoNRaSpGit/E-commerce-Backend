@@ -132,30 +132,30 @@ export async function obtenerProductosAdmin(req, res) {
     let rows;
 
     if (onlyNoCategoria) {
-
       [rows] = await pool.query(`
-  SELECT
-    id,
-    name,
-    price,
-    status,
-    barcode,
-    categoria,
-    subcategoria,
-    stock
-  FROM productos_test
-  WHERE
-    (categoria IS NULL OR TRIM(categoria) = '')
-    AND (barcode IS NOT NULL AND TRIM(barcode) <> '')
-  ORDER BY has_image DESC, name ASC
-`);
-
+    SELECT
+      id,
+      name,
+      price,
+      status,
+      barcode,
+      barcode_normalized,
+      categoria,
+      subcategoria,
+      stock,
+      (image IS NOT NULL AND LENGTH(image) > 0) AS has_image
+    FROM productos_test
+    WHERE (categoria IS NULL OR TRIM(categoria) = '')
+    ORDER BY has_image DESC, name ASC
+  `);
     } else {
       [rows] = await pool.query(`
-        SELECT *
-        FROM productos_test
-        ORDER BY has_image DESC, name ASC
-      `);
+    SELECT
+      *,
+      (image IS NOT NULL AND LENGTH(image) > 0) AS has_image
+    FROM productos_test
+    ORDER BY has_image DESC, name ASC
+  `);
     }
 
     return res.json({

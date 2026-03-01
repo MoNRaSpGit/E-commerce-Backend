@@ -52,9 +52,10 @@ export async function op999List(req, res) {
     const [rows] = await pool.query(
       `
       SELECT
-        id, name, price, barcode, stock, status,
-        CASE WHEN image IS NULL OR TRIM(image) = '' THEN 0 ELSE 1 END AS has_image
-      FROM productos_test
+  id, name, price, barcode, stock, status,
+  categoria, subcategoria,
+  CASE WHEN image IS NULL OR TRIM(image) = '' THEN 0 ELSE 1 END AS has_image
+FROM productos_test
       ${whereSql}
       ORDER BY name ASC
       `,
@@ -117,7 +118,7 @@ export async function op999Update(req, res) {
       return res.status(400).json({ ok: false, error: "ID inválido" });
     }
 
-    const { name, price, image, status } = req.body || {};
+    const { name, price, image, status, categoria, subcategoria } = req.body || {};
 
     const fields = [];
     const values = [];
@@ -143,6 +144,27 @@ export async function op999Update(req, res) {
       }
       fields.push("status = ?");
       values.push(s);
+    }
+
+    // --- categoria / subcategoria ---
+    if (categoria !== undefined) {
+      const c = String(categoria ?? "").trim();
+      if (c === "") {
+        fields.push("categoria = NULL");
+      } else {
+        fields.push("categoria = ?");
+        values.push(c);
+      }
+    }
+
+    if (subcategoria !== undefined) {
+      const sc = String(subcategoria ?? "").trim();
+      if (sc === "") {
+        fields.push("subcategoria = NULL");
+      } else {
+        fields.push("subcategoria = ?");
+        values.push(sc);
+      }
     }
 
 

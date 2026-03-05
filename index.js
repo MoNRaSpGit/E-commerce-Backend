@@ -13,6 +13,10 @@ import analyticsRoutes from "./src/routes/analytics.routes.js";
 import pushRoutes from "./src/routes/push.routes.js";
 import sinStockRoutes from "./src/routes/sinstock.routes.js";
 
+
+import preciosRoutes from "./src/routes/precios.routes.js";
+
+
 import actualizacionRoutes from "./src/routes/actualizacion.routes.js";
 import op999Routes from "./src/routes/op999.routes.js";
 
@@ -62,6 +66,7 @@ app.use("/api/push", pushRoutes);
 app.use("/api/actualizacion", actualizacionRoutes);
 app.use("/api/op999", op999Routes);
 app.use("/api/sinstock", sinStockRoutes);
+app.use("/api/precios", preciosRoutes);
 
 
 

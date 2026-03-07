@@ -30,6 +30,9 @@ export async function op999List(req, res) {
     const where = [];
     const values = [];
 
+    // nunca mostrar desclasificados en esta lista
+    where.push(`status <> 'desclasificado'`);
+
     // siempre respetamos barcode si viene el flag
     if (soloConBarcode) {
       where.push("(barcode IS NOT NULL AND TRIM(barcode) <> '')");

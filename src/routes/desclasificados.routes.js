@@ -1,8 +1,18 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../middlewares/auth.js";
-import { desclasificarProducto } from "../controllers/desclasificados.controller.js";
+import {
+  listarDesclasificados,
+  desclasificarProducto,
+} from "../controllers/desclasificados.controller.js";
 
 const router = Router();
+
+router.get(
+  "/",
+  requireAuth,
+  requireRole("admin"),
+  listarDesclasificados
+);
 
 /**
  * Admin / Operario

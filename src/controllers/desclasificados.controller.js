@@ -1,3 +1,34 @@
+export async function listarDesclasificados(req, res) {
+  const pool = req.app.locals.pool;
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+        id,
+        name,
+        price,
+        stock,
+        image,
+        barcode,
+        status,
+        categoria,
+        subcategoria,
+        updated_at
+      FROM productos_test
+      WHERE status = 'desclasificado'
+      ORDER BY updated_at DESC, name ASC`
+    );
+
+    return res.json({ ok: true, data: rows });
+  } catch (err) {
+    console.error("listarDesclasificados error:", err);
+    return res.status(500).json({ ok: false, error: "Error listando desclasificados" });
+  }
+}
+
+
+
+
 export async function desclasificarProducto(req, res) {
   const pool = req.app.locals.pool;
   const productoId = Number(req.params.productoId);

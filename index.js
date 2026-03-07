@@ -12,6 +12,7 @@ import stockRoutes from "./src/routes/stock.routes.js";
 import analyticsRoutes from "./src/routes/analytics.routes.js";
 import pushRoutes from "./src/routes/push.routes.js";
 import sinStockRoutes from "./src/routes/sinstock.routes.js";
+import desclasificadosRoutes from "./src/routes/desclasificados.routes.js";
 
 
 import preciosRoutes from "./src/routes/precios.routes.js";
@@ -66,6 +67,7 @@ app.use("/api/push", pushRoutes);
 app.use("/api/actualizacion", actualizacionRoutes);
 app.use("/api/op999", op999Routes);
 app.use("/api/sinstock", sinStockRoutes);
+app.use("/api/desclasificados", desclasificadosRoutes);
 app.use("/api/precios", preciosRoutes);
 
 

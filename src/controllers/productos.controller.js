@@ -650,15 +650,11 @@ export async function crearProductoPorBarcode(req, res) {
     const barcode = String(req.params.barcode || "").trim();
     if (!barcode) return res.status(400).json({ ok: false, error: "Barcode requerido" });
 
-    const nameRaw = req.body?.name;
     const priceRaw = req.body?.price;
 
-    const name = String(nameRaw || "").trim();
+    const name = "Otros (escaneado)";
     const price = Number(priceRaw);
 
-    if (name.length < 2) {
-      return res.status(400).json({ ok: false, error: "Nombre requerido" });
-    }
     if (!Number.isFinite(price) || price < 0) {
       return res.status(400).json({ ok: false, error: "Precio inválido" });
     }

@@ -38,13 +38,20 @@ export async function op999List(req, res) {
       where.push("(barcode IS NOT NULL AND TRIM(barcode) <> '')");
     }
 
-    // Nuevo: si viene price_eq, traemos (price = price_eq) OR (sin imagen)
+    // Si viene price_eq, traemos:
+    // - price = price_eq
+    // - pendientes
+    // - sin imagen
+    // - nombres marcados con (fd), (ch), (img)
     if (priceEq !== null && Number.isFinite(priceEq)) {
       where.push(`(
   price = ?
   OR status = 'pendiente'
   OR image IS NULL
   OR TRIM(image) = ''
+  OR LOWER(name) LIKE '%(fd)%'
+  OR LOWER(name) LIKE '%(ch)%'
+  OR LOWER(name) LIKE '%(img)%'
 )`);
       values.push(priceEq);
     }

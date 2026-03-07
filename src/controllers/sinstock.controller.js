@@ -14,9 +14,10 @@ export async function listarProductosSinStock(req, res) {
         subcategoria,
         stock,
         CASE WHEN image IS NULL OR TRIM(image) = '' THEN 0 ELSE 1 END AS has_image
-      FROM productos_test
-      WHERE stock <= 0
-      ORDER BY has_image DESC, name ASC
+    FROM productos_test
+WHERE stock <= 0
+  AND status <> 'desclasificado'
+ORDER BY has_image DESC, name ASC
     `);
 
     return res.json({ ok: true, data: rows });

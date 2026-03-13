@@ -652,7 +652,7 @@ export async function crearProductoPorBarcode(req, res) {
 
     const priceRaw = req.body?.price;
 
-    const name = "Otros (escaneado)";
+    const name = "Producto Manual";
     const price = Number(priceRaw);
 
     if (!Number.isFinite(price) || price < 0) {

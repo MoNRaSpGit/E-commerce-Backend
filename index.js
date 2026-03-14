@@ -20,6 +20,7 @@ import preciosRoutes from "./src/routes/precios.routes.js";
 
 import actualizacionRoutes from "./src/routes/actualizacion.routes.js";
 import op999Routes from "./src/routes/op999.routes.js";
+import scanLiveRoutes from "./src/routes/scanlive.routes.js";
 
 
 
@@ -69,6 +70,7 @@ app.use("/api/op999", op999Routes);
 app.use("/api/sinstock", sinStockRoutes);
 app.use("/api/desclasificados", desclasificadosRoutes);
 app.use("/api/precios", preciosRoutes);
+app.use("/api/scanlive", scanLiveRoutes);
 
 
 

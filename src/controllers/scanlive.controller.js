@@ -1,4 +1,5 @@
 import { emitScanLive } from "../realtime/scanLiveHub.js";
+import { registrarVentaEnCajaSiHayActiva } from "../services/caja.service.js";
 
 function normalizeItems(items) {
     if (!Array.isArray(items)) return [];
@@ -244,7 +245,7 @@ export async function closeScanSession(req, res) {
         }
 
         const [[existing]] = await pool.query(
-            `SELECT id
+            `SELECT id, subtotal
        FROM eco_scan_session
        WHERE operario_id = ? AND estado = 'activa'
        ORDER BY id DESC
@@ -256,12 +257,24 @@ export async function closeScanSession(req, res) {
             return res.json({ ok: true, data: { closed: false } });
         }
 
-        await pool.query(
+                await pool.query(
             `UPDATE eco_scan_session
        SET estado = 'cerrada', closed_at = NOW(), updated_at = NOW()
        WHERE id = ?`,
             [existing.id]
         );
+
+        const totalVenta = Number(existing.subtotal || 0);
+
+        let cajaResult = null;
+        if (totalVenta > 0) {
+            cajaResult = await registrarVentaEnCajaSiHayActiva(pool, {
+                operarioId,
+                scanSessionId: Number(existing.id),
+                totalVenta,
+                descripcion: "Venta desde escaneo",
+            });
+        }
 
         emitScanLive("scan_session_closed", {
             operarioId,
@@ -274,6 +287,7 @@ export async function closeScanSession(req, res) {
             data: {
                 closed: true,
                 sessionId: Number(existing.id),
+                caja: cajaResult,
             },
         });
     } catch (err) {

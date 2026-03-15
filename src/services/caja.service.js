@@ -1,3 +1,5 @@
+import { emitCaja } from "../realtime/cajaHub.js";
+
 export async function obtenerCajaActiva(pool) {
   const [rows] = await pool.query(
     `SELECT
@@ -87,6 +89,13 @@ export async function abrirCaja(pool, { montoInicial, usuarioId }) {
 
     await conn.commit();
 
+    emitCaja("caja_updated", {
+      type: "apertura",
+      cajaId,
+      monto_actual: monto,
+      at: new Date().toISOString(),
+    });
+
     return {
       ok: true,
       caja: {
@@ -147,6 +156,13 @@ export async function registrarPagoCajaActiva(pool, { monto, descripcion, usuari
     );
 
     await conn.commit();
+
+    emitCaja("caja_updated", {
+      type: "pago",
+      cajaId: caja.id,
+      monto_actual: nuevoMonto,
+      at: new Date().toISOString(),
+    });
 
     return {
       ok: true,
@@ -212,6 +228,14 @@ export async function registrarVentaEnCajaSiHayActiva(
 
     await conn.commit();
 
+    emitCaja("caja_updated", {
+      type: "venta",
+      cajaId: caja.id,
+      monto_actual: nuevoMonto,
+      scanSessionId: sessionId,
+      at: new Date().toISOString(),
+    });
+
     return {
       ok: true,
       skipped: false,
@@ -250,6 +274,13 @@ export async function cerrarCajaActiva(pool, { usuarioId }) {
   if (!result.affectedRows) {
     return { ok: false, error: "No se pudo cerrar la caja" };
   }
+
+  emitCaja("caja_updated", {
+    type: "cierre",
+    cajaId: caja.id,
+    estado: "cerrada",
+    at: new Date().toISOString(),
+  });
 
   return {
     ok: true,

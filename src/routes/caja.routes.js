@@ -7,8 +7,19 @@ import {
   postPagoCaja,
   postCerrarCaja,
 } from "../controllers/caja.controller.js";
+import { requireAuthSse } from "../middlewares/authSse.js";
+import { streamCaja } from "../controllers/caja.stream.controller.js";
+
 
 const router = Router();
+
+
+router.get(
+  "/stream",
+  requireAuthSse,
+  requireRole("admin", "operario"),
+  streamCaja
+);
 
 router.get(
   "/activa",

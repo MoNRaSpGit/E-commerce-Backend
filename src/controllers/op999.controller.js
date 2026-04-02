@@ -24,8 +24,6 @@ export async function op999List(req, res) {
     const pool = req.app.locals.pool;
 
     const soloConBarcode = String(req.query?.solo_con_barcode || "") === "1";
-    const priceEqRaw = req.query?.price_eq;
-    const priceEq = priceEqRaw !== undefined ? Number(priceEqRaw) : null;
 
     const where = [];
     const values = [];
@@ -38,32 +36,24 @@ export async function op999List(req, res) {
       where.push("(barcode IS NOT NULL AND TRIM(barcode) <> '')");
     }
 
-    // Si viene price_eq, traemos:
-    // - price = price_eq
-    // - pendientes
-    // - sin imagen
-    // - nombres marcados con (fd), (ch), (img)
-    if (priceEq !== null && Number.isFinite(priceEq)) {
-      where.push(`(
-  price = ?
-  OR status = 'pendiente'
-  OR image IS NULL
-  OR TRIM(image) = ''
-  OR LOWER(name) LIKE '%(fd)%'
-  OR LOWER(name) LIKE '%(ch)%'
-  OR LOWER(name) LIKE '%(img)%'
-)`);
-      values.push(priceEq);
-    }
+
 
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
 
     const [rows] = await pool.query(
       `
-      SELECT
-  id, name, price, barcode, stock, status,
-  categoria, subcategoria,
+            SELECT
+  id,
+  name,
+  price,
+  priceOriginal,
+  barcode,
+  stock,
+  status,
+  categoria,
+  subcategoria,
+  updated_at,
   CASE WHEN image IS NULL OR TRIM(image) = '' THEN 0 ELSE 1 END AS has_image
 FROM productos_test
       ${whereSql}
@@ -128,7 +118,7 @@ export async function op999Update(req, res) {
       return res.status(400).json({ ok: false, error: "ID inválido" });
     }
 
-    const { name, price, image, status, categoria, subcategoria } = req.body || {};
+    const { name, price, priceOriginal, image, status, categoria, subcategoria } = req.body || {};
 
     const fields = [];
     const values = [];
@@ -145,6 +135,15 @@ export async function op999Update(req, res) {
       if (!Number.isFinite(p) || p < 0) return res.status(400).json({ ok: false, error: "Precio inválido" });
       fields.push("price = ?");
       values.push(p);
+    }
+
+    if (priceOriginal !== undefined) {
+      const po = Number(String(priceOriginal).replace(",", "."));
+      if (!Number.isFinite(po) || po < 0) {
+        return res.status(400).json({ ok: false, error: "Precio original inválido" });
+      }
+      fields.push("priceOriginal = ?");
+      values.push(po);
     }
 
     if (status !== undefined) {

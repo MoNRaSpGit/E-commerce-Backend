@@ -13,6 +13,7 @@ import analyticsRoutes from "./src/routes/analytics.routes.js";
 import pushRoutes from "./src/routes/push.routes.js";
 import sinStockRoutes from "./src/routes/sinstock.routes.js";
 import desclasificadosRoutes from "./src/routes/desclasificados.routes.js";
+import rankingRoutes from "./src/routes/ranking.routes.js";
 
 
 import preciosRoutes from "./src/routes/precios.routes.js";
@@ -73,6 +74,7 @@ app.use("/api/desclasificados", desclasificadosRoutes);
 app.use("/api/precios", preciosRoutes);
 app.use("/api/scanlive", scanLiveRoutes);
 app.use("/api/caja", cajaRoutes);
+app.use("/api/ranking", rankingRoutes);
 
 
 

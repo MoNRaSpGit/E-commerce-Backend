@@ -27,14 +27,14 @@ router.get(
 router.put(
   "/sync",
   requireAuth,
-  requireRole("operario"),
+  requireRole("operario", "admin"),
   syncScanSession
 );
 
 router.post(
   "/close",
   requireAuth,
-  requireRole("operario"),
+  requireRole("operario", "admin"),
   closeScanSession
 );
 

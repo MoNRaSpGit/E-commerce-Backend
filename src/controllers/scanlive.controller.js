@@ -236,6 +236,7 @@ export async function syncScanSession(req, res) {
 }
 
 export async function closeScanSession(req, res) {
+    
     try {
         const pool = req.app.locals.pool;
         const operarioId = Number(req.user?.id);
@@ -257,7 +258,7 @@ export async function closeScanSession(req, res) {
             return res.json({ ok: true, data: { closed: false } });
         }
 
-                await pool.query(
+        await pool.query(
             `UPDATE eco_scan_session
        SET estado = 'cerrada', closed_at = NOW(), updated_at = NOW()
        WHERE id = ?`,
@@ -265,6 +266,28 @@ export async function closeScanSession(req, res) {
         );
 
         const totalVenta = Number(existing.subtotal || 0);
+
+        // 🔥 RANKING: sumar productos vendidos del día
+        const [items] = await pool.query(
+            `SELECT producto_id, cantidad
+   FROM eco_scan_session_item
+   WHERE session_id = ?`,
+            [existing.id]
+        );
+
+        const today = new Date().toISOString().slice(0, 10);
+
+        for (const item of items) {
+            if (!item.producto_id) continue;
+
+            await pool.query(
+                `INSERT INTO eco_ranking_producto_dia (producto_id, fecha, cantidad_total)
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       cantidad_total = cantidad_total + VALUES(cantidad_total)`,
+                [item.producto_id, today, item.cantidad]
+            );
+        }
 
         let cajaResult = null;
         if (totalVenta > 0) {

@@ -1,6 +1,6 @@
 import { emitScanLive } from "../realtime/scanLiveHub.js";
 import { emitCaja } from "../realtime/cajaHub.js";
-import { registrarVentaEnCajaActivaEnConexion } from "../services/caja.service.js";
+import { getCajaRealtimeSnapshot, registrarVentaEnCajaActivaEnConexion } from "../services/caja.service.js";
 import { performance } from "node:perf_hooks";
 
 function normalizeItems(items) {
@@ -493,13 +493,33 @@ export async function closeScanSession(req, res) {
 
         setImmediate(() => {
             if (cajaResult && !cajaResult.skipped) {
-                emitCaja("caja_updated", {
-                    type: "venta",
-                    cajaId: cajaResult.cajaId || null,
-                    scanSessionId: Number(existing.id),
-                    at: new Date().toISOString(),
-                    refresh: true,
-                });
+                void (async () => {
+                    try {
+                        const snapshot = await getCajaRealtimeSnapshot(pool, {
+                            movimientosLimit: 10,
+                        });
+
+                        emitCaja("caja_updated", {
+                            type: "venta",
+                            cajaId: cajaResult.cajaId || snapshot.caja?.id || null,
+                            scanSessionId: Number(existing.id),
+                            at: new Date().toISOString(),
+                            refresh: true,
+                            caja: snapshot.caja,
+                            movimientos: snapshot.movimientos,
+                            resumen_hoy: snapshot.resumen_hoy,
+                        });
+                    } catch (err) {
+                        console.error("emit caja_updated snapshot error:", err);
+                        emitCaja("caja_updated", {
+                            type: "venta",
+                            cajaId: cajaResult.cajaId || null,
+                            scanSessionId: Number(existing.id),
+                            at: new Date().toISOString(),
+                            refresh: true,
+                        });
+                    }
+                })();
             }
 
             void processDeferredScanSessionClose(pool, {

@@ -183,6 +183,49 @@ export async function listarMovimientosCajaActiva(pool) {
   return { caja, movimientos: rows };
 }
 
+export async function getCajaRealtimeSnapshot(pool, { movimientosLimit = 10 } = {}) {
+  const caja = await obtenerCajaActiva(pool);
+  if (!caja) {
+    return {
+      caja: null,
+      movimientos: [],
+      resumen_hoy: null,
+    };
+  }
+
+  const safeMovimientosLimit = normalizePositiveInt(movimientosLimit, 10);
+  const [movimientosRows, resumenHoy] = await Promise.all([
+    pool.query(
+      `SELECT
+        m.id,
+        m.caja_id,
+        m.tipo,
+        m.monto,
+        m.descripcion,
+        m.usuario_id,
+        m.pedido_id,
+        m.scan_session_id,
+        m.created_at,
+        u.nombre,
+        u.apellido,
+        u.email
+       FROM eco_caja_movimiento m
+       JOIN eco_usuario u ON u.id = m.usuario_id
+       WHERE m.caja_id = ?
+       ORDER BY m.created_at DESC, m.id DESC
+       LIMIT ?`,
+      [caja.id, safeMovimientosLimit]
+    ),
+    getCajaResumenDiaDesdeCaja(pool, { cajaId: caja.id }),
+  ]);
+
+  return {
+    caja,
+    movimientos: movimientosRows[0] || [],
+    resumen_hoy: resumenHoy,
+  };
+}
+
 export async function getCajaDashboard(
   pool,
   { rankingLimit = 10, movimientosLimit = 20, sesionesLimit = 10 } = {}

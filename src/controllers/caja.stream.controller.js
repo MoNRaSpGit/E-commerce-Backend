@@ -16,6 +16,9 @@ export function streamCaja(req, res) {
   res.write(`event: caja_connected\ndata: {"ok":true}\n\n`);
 
   addCajaClient(res);
+  console.info("[caja.sse] client_connected", {
+    userId,
+  });
 
   const keepAlive = setInterval(() => {
     try {
@@ -32,6 +35,9 @@ export function streamCaja(req, res) {
   req.on("close", () => {
     clearInterval(keepAlive);
     removeCajaClient(res);
+    console.info("[caja.sse] client_disconnected", {
+      userId,
+    });
     try {
       res.end();
     } catch {}

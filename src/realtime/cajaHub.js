@@ -9,6 +9,12 @@ export function removeCajaClient(res) {
 }
 
 export function emitCaja(event, payload) {
+  console.info("[caja.sse] emit", {
+    event,
+    clients: cajaClients.size,
+    payload,
+  });
+
   const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
 
   for (const res of cajaClients) {

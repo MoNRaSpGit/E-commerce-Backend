@@ -1,5 +1,7 @@
 import { emitScanLive } from "../realtime/scanLiveHub.js";
-import { registrarVentaEnCajaSiHayActiva } from "../services/caja.service.js";
+import { emitCaja } from "../realtime/cajaHub.js";
+import { registrarVentaEnCajaActivaEnConexion } from "../services/caja.service.js";
+import { performance } from "node:perf_hooks";
 
 function normalizeItems(items) {
     if (!Array.isArray(items)) return [];
@@ -27,6 +29,97 @@ function normalizeItems(items) {
             };
         })
         .filter(Boolean);
+}
+
+function getSyncItemKey(item) {
+    if (item.producto_id) {
+        return `p:${item.producto_id}`;
+    }
+
+    return `n:${String(item.nombre_snapshot || "").trim().toLowerCase()}`;
+}
+
+async function processDeferredScanSessionClose(pool, { operarioId, sessionId, totalVenta }) {
+    const startedAt = performance.now();
+    const timings = {};
+    const mark = (label, from) => {
+        timings[label] = Number((performance.now() - from).toFixed(2));
+    };
+
+    try {
+        const loadItemsStartedAt = performance.now();
+        const [items] = await pool.query(
+            `SELECT producto_id, cantidad
+       FROM eco_scan_session_item
+       WHERE session_id = ?`,
+            [sessionId]
+        );
+        mark("leer_items_ms", loadItemsStartedAt);
+
+        const today = new Date().toISOString().slice(0, 10);
+        const rankingByProduct = new Map();
+
+        for (const item of items) {
+            const productoId = Number(item.producto_id);
+            if (!productoId) continue;
+
+            const cantidad = Number(item.cantidad || 0);
+            rankingByProduct.set(
+                productoId,
+                Number(rankingByProduct.get(productoId) || 0) + cantidad
+            );
+        }
+
+        const rankingStartedAt = performance.now();
+        if (rankingByProduct.size > 0) {
+            const values = [...rankingByProduct.entries()].map(([productoId, cantidadTotal]) => [
+                productoId,
+                today,
+                cantidadTotal,
+            ]);
+
+            await pool.query(
+                `INSERT INTO eco_ranking_producto_dia (producto_id, fecha, cantidad_total)
+         VALUES ?
+         ON DUPLICATE KEY UPDATE
+           cantidad_total = cantidad_total + VALUES(cantidad_total)`,
+                [values]
+            );
+        }
+        mark("actualizar_ranking_ms", rankingStartedAt);
+
+        const emitStartedAt = performance.now();
+        const closedAt = new Date().toISOString();
+        emitScanLive("scan_session_closed", {
+            operarioId,
+            sessionId: Number(sessionId),
+            closed_at: closedAt,
+        });
+        emitCaja("scanlive_updated", {
+            type: "scan_session_closed",
+            operarioId,
+            sessionId: Number(sessionId),
+            totalVenta,
+            closed_at: closedAt,
+        });
+        mark("emit_scanlive_ms", emitStartedAt);
+
+        timings.total_ms = Number((performance.now() - startedAt).toFixed(2));
+        console.info("[scanlive.close.deferred] timing", {
+            operarioId,
+            sessionId: Number(sessionId),
+            itemsCount: items.length,
+            rankingProductsCount: rankingByProduct.size,
+            totalVenta,
+            ...timings,
+        });
+    } catch (err) {
+        console.error("processDeferredScanSessionClose error:", {
+            operarioId,
+            sessionId,
+            err,
+        });
+    }
 }
 
 export async function getCurrentScanSession(req, res) {
@@ -147,9 +240,11 @@ export async function syncScanSession(req, res) {
     );
 
     const conn = await pool.getConnection();
+    let transactionOpen = false;
 
     try {
         await conn.beginTransaction();
+        transactionOpen = true;
 
         const [[existing]] = await conn.query(
             `SELECT id
@@ -179,16 +274,76 @@ export async function syncScanSession(req, res) {
          WHERE id = ?`,
                 [totalItems, totalUnidades, subtotal, sessionId]
             );
+        }
 
+        const [currentItems] = await conn.query(
+            `SELECT id, producto_id, nombre_snapshot, precio_unitario_snapshot, cantidad, subtotal, orden
+       FROM eco_scan_session_item
+       WHERE session_id = ?`,
+            [sessionId]
+        );
+
+        const currentByKey = new Map();
+        const deleteIds = new Set(currentItems.map((item) => {
+            const key = getSyncItemKey(item);
+            currentByKey.set(key, item);
+            return item.id;
+        }));
+
+        const inserts = [];
+        const updates = [];
+
+        for (const item of normalizedItems) {
+            const key = getSyncItemKey(item);
+            const existingItem = currentByKey.get(key);
+
+            if (existingItem) {
+                deleteIds.delete(existingItem.id);
+
+                const needsUpdate =
+                    existingItem.nombre_snapshot !== item.nombre_snapshot ||
+                    Number(existingItem.precio_unitario_snapshot) !== item.precio_unitario_snapshot ||
+                    Number(existingItem.cantidad) !== item.cantidad ||
+                    Number(existingItem.subtotal) !== item.subtotal ||
+                    Number(existingItem.orden) !== item.orden;
+
+                if (needsUpdate) {
+                    updates.push({ ...item, id: existingItem.id });
+                }
+            } else {
+                inserts.push(item);
+            }
+        }
+
+        if (deleteIds.size > 0) {
             await conn.query(
                 `DELETE FROM eco_scan_session_item
-         WHERE session_id = ?`,
-                [sessionId]
+         WHERE id IN (?)`,
+                [[...deleteIds]]
             );
         }
 
-        if (normalizedItems.length > 0) {
-            const values = normalizedItems.map((it) => [
+        if (updates.length > 0) {
+            for (const item of updates) {
+                await conn.query(
+                    `UPDATE eco_scan_session_item
+           SET producto_id = ?, nombre_snapshot = ?, precio_unitario_snapshot = ?, cantidad = ?, subtotal = ?, orden = ?, updated_at = NOW()
+           WHERE id = ?`,
+                    [
+                        item.producto_id,
+                        item.nombre_snapshot,
+                        item.precio_unitario_snapshot,
+                        item.cantidad,
+                        item.subtotal,
+                        item.orden,
+                        item.id,
+                    ]
+                );
+            }
+        }
+
+        if (inserts.length > 0) {
+            const values = inserts.map((it) => [
                 sessionId,
                 it.producto_id,
                 it.nombre_snapshot,
@@ -207,8 +362,18 @@ export async function syncScanSession(req, res) {
         }
 
         await conn.commit();
+        transactionOpen = false;
 
         emitScanLive("scan_session_update", {
+            operarioId,
+            sessionId: Number(sessionId),
+            total_items: totalItems,
+            total_unidades: totalUnidades,
+            subtotal,
+            updated_at: new Date().toISOString(),
+        });
+        emitCaja("scanlive_updated", {
+            type: "scan_session_update",
             operarioId,
             sessionId: Number(sessionId),
             total_items: totalItems,
@@ -227,7 +392,9 @@ export async function syncScanSession(req, res) {
             },
         });
     } catch (err) {
-        await conn.rollback();
+        if (transactionOpen) {
+            await conn.rollback();
+        }
         console.error("syncScanSession error:", err);
         return res.status(500).json({ ok: false, error: "Error interno del servidor" });
     } finally {
@@ -236,73 +403,110 @@ export async function syncScanSession(req, res) {
 }
 
 export async function closeScanSession(req, res) {
-    
+    const pool = req.app.locals.pool;
+    const conn = await pool.getConnection();
+    let transactionOpen = false;
+
     try {
-        const pool = req.app.locals.pool;
         const operarioId = Number(req.user?.id);
+        const startedAt = performance.now();
+        const timings = {};
+        const mark = (label, from) => {
+            timings[label] = Number((performance.now() - from).toFixed(2));
+        };
 
         if (!operarioId) {
             return res.status(401).json({ ok: false, error: "No autenticado" });
         }
 
-        const [[existing]] = await pool.query(
+        const beginTxStartedAt = performance.now();
+        await conn.beginTransaction();
+        transactionOpen = true;
+        mark("begin_transaction_ms", beginTxStartedAt);
+
+        const findSessionStartedAt = performance.now();
+        const [[existing]] = await conn.query(
             `SELECT id, subtotal
        FROM eco_scan_session
        WHERE operario_id = ? AND estado = 'activa'
        ORDER BY id DESC
-       LIMIT 1`,
+       LIMIT 1
+       FOR UPDATE`,
             [operarioId]
         );
+        mark("buscar_session_activa_ms", findSessionStartedAt);
 
         if (!existing) {
+            const commitStartedAt = performance.now();
+            await conn.commit();
+            transactionOpen = false;
+            mark("commit_ms", commitStartedAt);
+            timings.total_ms = Number((performance.now() - startedAt).toFixed(2));
+            console.info("[scanlive.close] timing", {
+                operarioId,
+                sessionId: null,
+                ...timings,
+            });
             return res.json({ ok: true, data: { closed: false } });
         }
 
-        await pool.query(
+        const closeSessionStartedAt = performance.now();
+        await conn.query(
             `UPDATE eco_scan_session
        SET estado = 'cerrada', closed_at = NOW(), updated_at = NOW()
        WHERE id = ?`,
             [existing.id]
         );
+        mark("cerrar_session_ms", closeSessionStartedAt);
 
         const totalVenta = Number(existing.subtotal || 0);
 
-        // 🔥 RANKING: sumar productos vendidos del día
-        const [items] = await pool.query(
-            `SELECT producto_id, cantidad
-   FROM eco_scan_session_item
-   WHERE session_id = ?`,
-            [existing.id]
-        );
-
-        const today = new Date().toISOString().slice(0, 10);
-
-        for (const item of items) {
-            if (!item.producto_id) continue;
-
-            await pool.query(
-                `INSERT INTO eco_ranking_producto_dia (producto_id, fecha, cantidad_total)
-     VALUES (?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       cantidad_total = cantidad_total + VALUES(cantidad_total)`,
-                [item.producto_id, today, item.cantidad]
-            );
-        }
-
         let cajaResult = null;
+        let cajaTimings = null;
         if (totalVenta > 0) {
-            cajaResult = await registrarVentaEnCajaSiHayActiva(pool, {
+            const cajaStartedAt = performance.now();
+            cajaResult = await registrarVentaEnCajaActivaEnConexion(conn, {
                 operarioId,
                 scanSessionId: Number(existing.id),
                 totalVenta,
                 descripcion: "Venta desde escaneo",
+                onTiming: (serviceTimings) => {
+                    cajaTimings = serviceTimings;
+                },
             });
+            mark("registrar_caja_ms", cajaStartedAt);
         }
 
-        emitScanLive("scan_session_closed", {
+        const commitStartedAt = performance.now();
+        await conn.commit();
+        transactionOpen = false;
+        mark("commit_ms", commitStartedAt);
+
+        timings.total_ms = Number((performance.now() - startedAt).toFixed(2));
+        console.info("[scanlive.close] timing", {
             operarioId,
             sessionId: Number(existing.id),
-            closed_at: new Date().toISOString(),
+            totalVenta,
+            ...timings,
+            caja: cajaTimings,
+        });
+
+        setImmediate(() => {
+            if (cajaResult && !cajaResult.skipped) {
+                emitCaja("caja_updated", {
+                    type: "venta",
+                    cajaId: cajaResult.cajaId || null,
+                    scanSessionId: Number(existing.id),
+                    at: new Date().toISOString(),
+                    refresh: true,
+                });
+            }
+
+            void processDeferredScanSessionClose(pool, {
+                operarioId,
+                sessionId: Number(existing.id),
+                totalVenta,
+            });
         });
 
         return res.json({
@@ -311,10 +515,19 @@ export async function closeScanSession(req, res) {
                 closed: true,
                 sessionId: Number(existing.id),
                 caja: cajaResult,
+                timings,
+                deferred: {
+                    status: "scheduled",
+                },
             },
         });
     } catch (err) {
+        if (transactionOpen) {
+            await conn.rollback();
+        }
         console.error("closeScanSession error:", err);
         return res.status(500).json({ ok: false, error: "Error interno del servidor" });
+    } finally {
+        conn.release();
     }
 }

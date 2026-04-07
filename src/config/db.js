@@ -16,6 +16,8 @@ export function createPool() {
     connectionLimit: 10,
     queueLimit: 0,
     timezone: "Z",
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 0,
 
   });
 }

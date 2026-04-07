@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../middlewares/auth.js";
 import {
+  getCajaDashboardView,
+  getCajaDbLatencyDiagnostics,
   getCajaActiva,
   getMovimientosCajaActiva,
   postAbrirCaja,
@@ -13,6 +15,27 @@ import { streamCaja } from "../controllers/caja.stream.controller.js";
 
 const router = Router();
 
+
+router.get(
+  "/dashboard/stream",
+  requireAuthSse,
+  requireRole("admin", "operario"),
+  streamCaja
+);
+
+router.get(
+  "/dashboard",
+  requireAuth,
+  requireRole("admin", "operario"),
+  getCajaDashboardView
+);
+
+router.get(
+  "/diagnostics/db-latency",
+  requireAuth,
+  requireRole("admin"),
+  getCajaDbLatencyDiagnostics
+);
 
 router.get(
   "/stream",

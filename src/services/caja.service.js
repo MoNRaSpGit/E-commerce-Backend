@@ -33,6 +33,124 @@ function normalizePositiveInt(value, fallback) {
   return Math.floor(parsed);
 }
 
+async function upsertCajaResumenDia(pool, { cajaId, fecha = null }) {
+  const targetCajaId = Number(cajaId);
+  if (!targetCajaId) {
+    return null;
+  }
+
+  const [rows] = await pool.query(
+    `SELECT
+      DATE(COALESCE(c.fecha_cierre, c.fecha_apertura, NOW())) AS fecha,
+      c.id AS caja_id,
+      c.monto_inicial AS monto_apertura,
+      c.monto_actual AS monto_cierre,
+      COALESCE(SUM(CASE WHEN m.tipo = 'venta' THEN m.monto ELSE 0 END), 0) AS ventas_total,
+      COALESCE(SUM(CASE WHEN m.tipo = 'pago' THEN m.monto ELSE 0 END), 0) AS pagos_total,
+      COALESCE(SUM(CASE WHEN m.tipo = 'venta' THEN 1 ELSE 0 END), 0) AS cantidad_ventas
+     FROM eco_caja c
+     LEFT JOIN eco_caja_movimiento m ON m.caja_id = c.id
+     WHERE c.id = ?
+     GROUP BY c.id, DATE(COALESCE(c.fecha_cierre, c.fecha_apertura, NOW())), c.monto_inicial, c.monto_actual`,
+    [targetCajaId]
+  );
+
+  const row = rows?.[0];
+  if (!row) {
+    return null;
+  }
+
+  const summaryDate = fecha || row.fecha;
+  const ventasTotal = Number(row.ventas_total || 0);
+  const pagosTotal = Number(row.pagos_total || 0);
+  const montoApertura = Number(row.monto_apertura || 0);
+  const montoCierre = Number(row.monto_cierre || 0);
+  const cantidadVentas = Number(row.cantidad_ventas || 0);
+  const gananciaEstimada = Number((ventasTotal - pagosTotal).toFixed(2));
+
+  await pool.query(
+    `INSERT INTO eco_caja_resumen_dia
+      (fecha, ventas_total, pagos_total, monto_apertura, monto_cierre, ganancia_estimada, cantidad_ventas, caja_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+      ventas_total = VALUES(ventas_total),
+      pagos_total = VALUES(pagos_total),
+      monto_apertura = VALUES(monto_apertura),
+      monto_cierre = VALUES(monto_cierre),
+      ganancia_estimada = VALUES(ganancia_estimada),
+      cantidad_ventas = VALUES(cantidad_ventas),
+      caja_id = VALUES(caja_id)`,
+    [
+      summaryDate,
+      ventasTotal,
+      pagosTotal,
+      montoApertura,
+      montoCierre,
+      gananciaEstimada,
+      cantidadVentas,
+      targetCajaId,
+    ]
+  );
+
+  return {
+    fecha: summaryDate,
+    ventas_total: ventasTotal,
+    pagos_total: pagosTotal,
+    monto_apertura: montoApertura,
+    monto_cierre: montoCierre,
+    ganancia_estimada: gananciaEstimada,
+    cantidad_ventas: cantidadVentas,
+    caja_id: targetCajaId,
+  };
+}
+
+async function getCajaResumenDiaDesdeCaja(pool, { cajaId, fecha = null }) {
+  const targetCajaId = Number(cajaId);
+  if (!targetCajaId) {
+    return null;
+  }
+
+  const [rows] = await pool.query(
+    `SELECT
+      DATE_FORMAT(DATE(COALESCE(c.fecha_cierre, c.fecha_apertura, NOW())), '%Y-%m-%d') AS fecha,
+      c.id AS caja_id,
+      c.monto_inicial AS monto_apertura,
+      c.monto_actual AS monto_cierre,
+      COALESCE(SUM(CASE WHEN m.tipo = 'venta' THEN m.monto ELSE 0 END), 0) AS ventas_total,
+      COALESCE(SUM(CASE WHEN m.tipo = 'pago' THEN m.monto ELSE 0 END), 0) AS pagos_total,
+      COALESCE(SUM(CASE WHEN m.tipo = 'venta' THEN 1 ELSE 0 END), 0) AS cantidad_ventas
+     FROM eco_caja c
+     LEFT JOIN eco_caja_movimiento m ON m.caja_id = c.id
+     WHERE c.id = ?
+     GROUP BY c.id, DATE(COALESCE(c.fecha_cierre, c.fecha_apertura, NOW())), c.monto_inicial, c.monto_actual`,
+    [targetCajaId]
+  );
+
+  const row = rows?.[0];
+  if (!row) {
+    return null;
+  }
+
+  const summaryDate = fecha || row.fecha;
+  const ventasTotal = Number(row.ventas_total || 0);
+  const pagosTotal = Number(row.pagos_total || 0);
+  const montoApertura = Number(row.monto_apertura || 0);
+  const montoCierre = Number(row.monto_cierre || 0);
+  const cantidadVentas = Number(row.cantidad_ventas || 0);
+  const gananciaEstimada = Number((ventasTotal - pagosTotal).toFixed(2));
+
+  return {
+    fecha: String(summaryDate).slice(0, 10),
+    ventas_total: ventasTotal,
+    pagos_total: pagosTotal,
+    monto_apertura: montoApertura,
+    monto_cierre: montoCierre,
+    ganancia_estimada: gananciaEstimada,
+    cantidad_ventas: cantidadVentas,
+    caja_id: targetCajaId,
+  };
+}
+
 export async function obtenerCajaActiva(pool) {
   return obtenerCajaActivaDesdeExecutor(pool);
 }
@@ -73,8 +191,11 @@ export async function getCajaDashboard(
   const safeMovimientosLimit = normalizePositiveInt(movimientosLimit, 20);
   const safeSesionesLimit = normalizePositiveInt(sesionesLimit, 10);
   const caja = await obtenerCajaActiva(pool);
+  const resumenHoyLivePromise = caja
+    ? getCajaResumenDiaDesdeCaja(pool, { cajaId: caja.id })
+    : Promise.resolve(null);
 
-  const [ranking, sesionesActivas, sesionesRecientes, movimientos] = await Promise.all([
+  const [ranking, sesionesActivas, sesionesRecientes, movimientos, resumenRows, resumenHoyLive] = await Promise.all([
     pool.query(
       `SELECT
         r.producto_id,
@@ -148,7 +269,36 @@ export async function getCajaDashboard(
           [caja.id, safeMovimientosLimit]
         )
       : Promise.resolve([[]]),
+    pool.query(
+      `SELECT
+        CASE
+          WHEN fecha = CURDATE() THEN 'hoy'
+          WHEN fecha = CURDATE() - INTERVAL 1 DAY THEN 'ayer'
+          ELSE NULL
+        END AS periodo,
+        DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha,
+        ventas_total,
+        pagos_total,
+        monto_apertura,
+        monto_cierre,
+        ganancia_estimada,
+        cantidad_ventas,
+        caja_id,
+        updated_at
+       FROM eco_caja_resumen_dia
+       WHERE fecha IN (CURDATE(), CURDATE() - INTERVAL 1 DAY)
+       ORDER BY fecha DESC`
+    ),
+    resumenHoyLivePromise,
   ]);
+  const resumenByPeriodo = new Map(
+    (resumenRows[0] || [])
+      .filter((row) => row.periodo === "hoy" || row.periodo === "ayer")
+      .map((row) => [row.periodo, row])
+  );
+  const today = String(
+    resumenByPeriodo.get("hoy")?.fecha || new Date().toISOString().slice(0, 10)
+  );
 
   return {
     generated_at: new Date().toISOString(),
@@ -157,12 +307,16 @@ export async function getCajaDashboard(
       movimientos: movimientos[0] || [],
     },
     ranking: {
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: today,
       items: ranking[0] || [],
     },
     scanlive: {
       sesiones_activas: sesionesActivas[0] || [],
       sesiones_recientes: sesionesRecientes[0] || [],
+    },
+    resumen: {
+      hoy: resumenHoyLive || resumenByPeriodo.get("hoy") || null,
+      ayer: resumenByPeriodo.get("ayer") || null,
     },
   };
 }
@@ -483,6 +637,8 @@ export async function cerrarCajaActiva(pool, { usuarioId }) {
     return { ok: false, error: "No se pudo cerrar la caja" };
   }
 
+  const resumenDia = await upsertCajaResumenDia(pool, { cajaId: caja.id });
+
   emitCaja("caja_updated", {
     type: "cierre",
     cajaId: caja.id,
@@ -494,5 +650,6 @@ export async function cerrarCajaActiva(pool, { usuarioId }) {
     ok: true,
     cajaId: caja.id,
     estado: "cerrada",
+    resumen_dia: resumenDia,
   };
 }
